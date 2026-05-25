@@ -23,14 +23,20 @@ Letting an LLM SSH freely into production is dangerous. ssh-harness exposes one 
 
 ## Install
 
-```bash
-git clone <this-repo>
-cd ssh-harness-1
-npm install
-npm run build
+SSH Harness is a Claude Code plugin. Install it from inside any project's Claude Code session:
+
+```
+/plugin marketplace add imelon2/ssh-harness
+
+/plugin install ssh-harness@ssh-harness
 ```
 
-Node 24+ required.
+
+Restart Claude Code after installing. On the next session the bundled `SessionStart` hook seeds `.ssh_harness/allowlist.yaml` into the current project (never overwriting an existing one), and the MCP server comes up with its tools exposed as `mcp__ssh-harness__ssh_harness_*`.
+
+**Requirements:** Node 24+ on `PATH` (the server runs via `node`). The compiled `bridge/` is committed, so no `npm install` or build step is needed to install.
+
+Then define your hosts and diagnostics in the seeded `.ssh_harness/allowlist.yaml` (see [Adding a new rule](#adding-a-new-rule), [Swapping `localhost` for a real host](#swapping-localhost-for-a-real-host), and [docs/allowlist-guide.md](docs/allowlist-guide.md)).
 
 ## Directory layout
 
