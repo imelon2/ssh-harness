@@ -1,0 +1,65 @@
+# examples/allowlist.yaml
+# Sample ssh-harness allowlist. Copy to .ssh_harness/allowlist.yaml and adjust.
+# Every rule defines one MCP tool the LLM may call. Every parameter is typed
+# and validated; integer params require `maximum`; string params require
+# `enum` or `pattern`. See README for the schema reference.
+
+version: 2
+
+hosts:
+  allowHosts: &hosts [localhost]
+  # sshConfigRoot is optional. If omitted, defaults to ~/.ssh/config.
+  # Relative paths resolve against this file's directory.
+  sshConfigRoot: "./ssh_config"
+
+settings:
+  timeoutMs: 30000
+  maxStdoutBytes: 262144
+  maxStderrBytes: 65536
+
+rules:
+  - id: get_uptime
+    tool:
+      name: ssh_harness_get_uptime
+      description: |
+        Return how long the host has been up and the current load averages (runs `uptime`).
+        Read-only, no arguments. One-shot snapshot.
+        Use when: confirming the host is reachable or estimating boot-age and load before deeper checks.
+    params:
+      host:
+        type: string
+        enum: *hosts
+        description: Target host alias from the ssh_config above
+    template:
+      host: "{host}"
+      argv: [uptime]
+
+  - id: get_disk_usage
+    tool:
+      name: ssh_harness_get_disk_usage
+      description: |
+        Show filesystem disk usage in human-readable form (runs `df -h`).
+        Read-only, no arguments. One-shot snapshot.
+        Use when: diagnosing disk pressure, out-of-space conditions, or auditing mount points — not for CPU/memory consumers.
+    params:
+      host:
+        type: string
+        enum: *hosts
+    template:
+      host: "{host}"
+      argv: [df, -h]
+
+  - id: get_process_top
+    tool:
+      name: ssh_harness_get_process_top
+      description: |
+        Snapshot all running processes with CPU/memory usage in forest form (runs `ps auxf`).
+        Read-only, no arguments. One-shot snapshot.
+        Use when: identifying runaway processes or unexpected CPU/memory consumers — not for disk or storage checks.
+    params:
+      host:
+        type: string
+        enum: *hosts
+    template:
+      host: "{host}"
+      argv: [ps, auxf]

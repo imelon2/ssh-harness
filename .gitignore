@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.env
+.DS_Store
+coverage/
+
+# ssh-harness
+.ssh_harness
+.claude
+.omc

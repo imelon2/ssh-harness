@@ -1,0 +1,19 @@
+{
+  "name": "ssh-harness",
+  "description": "Allowlist-driven Claude Code plugin for safe SSH diagnostics.",
+  "owner": {
+    "name": "choi.eth"
+  },
+  "plugins": [
+    {
+      "name": "ssh-harness",
+      "source": "./",
+      "description": "Allowlist-driven SSH harness for Claude Code, bundling an MCP server, skills, and hooks. Every diagnostic is a typed, audited, read-only YAML rule — the LLM cannot type free-form SSH commands. spawnSync with no shell, Zod-strict params, fail-closed audit log.",
+      "version": "1.0.0",
+      "category": "mcp",
+      "keywords": ["ssh", "mcp", "security", "allowlist", "audit", "diagnostics", "spawn"],
+      "strict": true
+    }
+  ],
+  "version": "1.0.0"
+}

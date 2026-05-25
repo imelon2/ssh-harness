@@ -1,0 +1,3 @@
+# CODEOWNERS — enforced on platforms that support it (GitHub, GitLab).
+# Local-only repos or unsupported platforms must enforce allowlist review manually.
+.ssh_harness/ @security-ops
