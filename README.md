@@ -162,8 +162,8 @@ The allowlist is YAML. Top-level fields:
   - `sshConfigRoot: <path>` — optional. Path to the OpenSSH client config. Relative paths resolve against this YAML file's directory; leading `~/` expands to home. Omit to default to `~/.ssh/config`. `SSH_HARNESS_CONFIG` env always wins.
 - `settings:` — optional. Tunables. Defaults:
   - `timeoutMs: 30000`
-  - `maxStdoutBytes: 262144`
-  - `maxStderrBytes: 65536`
+  - `maxStdoutBytes: 262144` — set to `0` to disable the cap (no truncation; `maxBuffer` becomes `Infinity`)
+  - `maxStderrBytes: 65536` — set to `0` to disable the cap
   - `sshBin: /usr/bin/ssh`
   - `identityFile:` (unset; ssh picks from `IdentityFile` in the resolved ssh_config)
 - `rules: [...]` — array of rule objects. Cap: 40 (override with `SSH_HARNESS_MAX_RULES`).

@@ -184,7 +184,7 @@ export async function executeRuleCall(
   const settings = registry.settings();
   let result: ExecResult;
   try {
-    result = runSsh(host, argv, {
+    result = await runSsh(host, argv, {
       sshBin: settings.sshBin,
       timeoutMs: settings.timeoutMs,
       maxStdoutBytes: settings.maxStdoutBytes,

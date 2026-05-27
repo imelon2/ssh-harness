@@ -59,7 +59,7 @@ export async function executeBuiltinCall(registry, config, rawArgs) {
         let execResult;
         let thrownError;
         try {
-            execResult = runSsh(host, ['true'], {
+            execResult = await runSsh(host, ['true'], {
                 sshBin: settings.sshBin,
                 timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
                 maxStdoutBytes: HEALTH_CHECK_SSH_STDOUT_BYTES,

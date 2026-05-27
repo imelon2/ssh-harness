@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as cp from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { runSsh } from '../src/exec.js';
 
 vi.mock('node:child_process');
 
-const mockSpawnSync = vi.mocked(cp.spawnSync);
+const mockSpawn = vi.mocked(cp.spawn);
 
 beforeEach(() => {
-  mockSpawnSync.mockReset();
+  mockSpawn.mockReset();
 });
 
 const baseOpts = {
@@ -18,19 +19,69 @@ const baseOpts = {
   configPath: '/tmp/ssh_config',
 };
 
-describe('runSsh', () => {
-  it('happy path: returns exitCode 0 and decoded output', () => {
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: Buffer.from('ok\n'),
-      stderr: Buffer.from(''),
-      signal: null,
-      pid: 123,
-      output: [],
-      error: undefined,
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+type FakeProc = EventEmitter & {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+  kill: ReturnType<typeof vi.fn>;
+  killed: boolean;
+};
 
-    const result = runSsh('host1', ['echo', 'ok'], baseOpts);
+/**
+ * Build a fake ChildProcess that emits the provided stdout/stderr chunks on
+ * next tick, then a 'close' event with the given exit code/signal. Optionally
+ * never closes (for timeout tests). The returned cast is intentionally loose;
+ * spawn's real return type has many properties we don't need.
+ */
+function fakeProc(opts: {
+  stdoutChunks?: Buffer[];
+  stderrChunks?: Buffer[];
+  exitCode?: number | null;
+  signal?: NodeJS.Signals | null;
+  emitError?: Error;
+  neverClose?: boolean;
+  closeDelayMs?: number;
+}): FakeProc {
+  const proc = new EventEmitter() as FakeProc;
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.killed = false;
+  proc.kill = vi.fn((_sig?: NodeJS.Signals | number) => {
+    proc.killed = true;
+    // Simulate kernel reaping the killed child shortly after
+    setImmediate(() => {
+      proc.emit('close', null, 'SIGTERM');
+    });
+    return true;
+  });
+
+  if (opts.emitError !== undefined) {
+    setImmediate(() => proc.emit('error', opts.emitError));
+    return proc;
+  }
+
+  const emit = () => {
+    for (const c of opts.stdoutChunks ?? []) proc.stdout.emit('data', c);
+    for (const c of opts.stderrChunks ?? []) proc.stderr.emit('data', c);
+    if (!opts.neverClose) {
+      proc.emit('close', opts.exitCode ?? 0, opts.signal ?? null);
+    }
+  };
+
+  if (opts.closeDelayMs !== undefined) {
+    setTimeout(emit, opts.closeDelayMs);
+  } else {
+    setImmediate(emit);
+  }
+  return proc;
+}
+
+describe('runSsh', () => {
+  it('happy path: returns exitCode 0 and decoded output', async () => {
+    mockSpawn.mockReturnValue(
+      fakeProc({ stdoutChunks: [Buffer.from('ok\n')], exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
+
+    const result = await runSsh('host1', ['echo', 'ok'], baseOpts);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('ok\n');
@@ -39,53 +90,28 @@ describe('runSsh', () => {
     expect(result.truncated).toEqual({ stdout: false, stderr: false });
   });
 
-  it('timeout SIGTERM: sets timedOut true', () => {
-    // Mock spawnSync to return SIGTERM after essentially the full timeout
-    mockSpawnSync.mockImplementation(() => {
-      // Simulate that timeout elapsed
-      const start = performance.now();
-      // burn time to simulate elapsed duration
-      const end = start; // we will control via durationMs by mocking performance
-      void end;
-      return {
-        status: null,
-        stdout: Buffer.alloc(0),
-        stderr: Buffer.alloc(0),
-        signal: 'SIGTERM',
-        pid: 123,
-        output: [],
-        error: undefined,
-      } as unknown as ReturnType<typeof cp.spawnSync>;
+  it('timeout: setTimeout fires SIGTERM and sets timedOut true', async () => {
+    let theProc: FakeProc | undefined;
+    mockSpawn.mockImplementation((..._args: unknown[]) => {
+      theProc = fakeProc({ neverClose: true });
+      return theProc as unknown as cp.ChildProcess;
     });
 
-    // Mock performance.now so durationMs >= timeoutMs - 50
-    const perfNow = vi.spyOn(performance, 'now');
-    let call = 0;
-    perfNow.mockImplementation(() => {
-      // first call = t0, second call = t0 + timeoutMs
-      return call++ === 0 ? 0 : baseOpts.timeoutMs;
-    });
+    const result = await runSsh('host1', ['sleep', '10'], { ...baseOpts, timeoutMs: 20 });
 
-    const result = runSsh('host1', ['sleep', '10'], baseOpts);
     expect(result.timedOut).toBe(true);
+    expect(theProc?.kill).toHaveBeenCalledWith('SIGTERM');
     expect(result.signal).toBe('SIGTERM');
-
-    perfNow.mockRestore();
+    expect(result.exitCode).toBeNull();
   });
 
-  it('stdout truncation: 2MB input with 1KB limit returns truncated flag', () => {
+  it('stdout truncation: 2MB input with 1KB limit returns truncated flag', async () => {
     const bigStdout = Buffer.from('a'.repeat(2 * 1024 * 1024), 'utf8');
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: bigStdout,
-      stderr: Buffer.alloc(0),
-      signal: null,
-      pid: 123,
-      output: [],
-      error: undefined,
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+    mockSpawn.mockReturnValue(
+      fakeProc({ stdoutChunks: [bigStdout], exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
 
-    const result = runSsh('host1', ['cat', 'bigfile'], baseOpts);
+    const result = await runSsh('host1', ['cat', 'bigfile'], baseOpts);
 
     expect(result.truncated.stdout).toBe(true);
     // stdout bytes should be <= maxStdoutBytes + length of '\n[truncated]'
@@ -94,7 +120,28 @@ describe('runSsh', () => {
     );
   });
 
-  it('multi-byte UTF-8 boundary: no replacement chars, truncated codepoint excluded', () => {
+  it('stdout truncation across multiple chunks: per-chunk discard, single truncation marker', async () => {
+    // Three 600-byte chunks → total 1800 bytes, cap 1024 → overflow on 2nd chunk
+    const chunks = [
+      Buffer.from('a'.repeat(600)),
+      Buffer.from('b'.repeat(600)),
+      Buffer.from('c'.repeat(600)),
+    ];
+    mockSpawn.mockReturnValue(
+      fakeProc({ stdoutChunks: chunks, exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
+
+    const result = await runSsh('host1', ['cat'], baseOpts);
+
+    expect(result.truncated.stdout).toBe(true);
+    expect(result.stdout).toContain('[truncated]');
+    // First 600 a's preserved entirely, plus 424 b's, then overflow.
+    // Inspect the captured portion BEFORE the truncation marker.
+    const body = result.stdout.split('\n[truncated]')[0];
+    expect(body).toBe('a'.repeat(600) + 'b'.repeat(424));
+  });
+
+  it('multi-byte UTF-8 boundary: no replacement chars, truncated codepoint excluded', async () => {
     // '한' = 0xED 0x95 0x9C (3 bytes)
     // Buffer: [a, a, a, a, 0xED, 0x95, 0x9C, a, a]
     // maxStdoutBytes = 5 → cutoff lands mid-CJK at byte 5
@@ -104,45 +151,59 @@ describe('runSsh', () => {
       han,
       Buffer.from('aa'),
     ]);
-    // buf = [61,61,61,61, ED,95,9C, 61,61] — length 9
-    // maxBytes=5: slice [0..5) = [61,61,61,61,ED] — ED is a lead byte needing 3 bytes but only 1 available
 
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: buf,
-      stderr: Buffer.alloc(0),
-      signal: null,
-      pid: 123,
-      output: [],
-      error: undefined,
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+    mockSpawn.mockReturnValue(
+      fakeProc({ stdoutChunks: [buf], exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
 
     const opts = { ...baseOpts, maxStdoutBytes: 5 };
-    const result = runSsh('host1', ['cat'], opts);
+    const result = await runSsh('host1', ['cat'], opts);
 
     expect(result.truncated.stdout).toBe(true);
-    // Must NOT contain replacement character
-    expect(result.stdout).not.toContain('�');
-    // Must contain the truncation marker
+    expect(result.stdout).not.toContain('�'); // no U+FFFD replacement char
     expect(result.stdout).toContain('\n[truncated]');
-    // The 4 ASCII 'a's before the CJK char should be present
     expect(result.stdout.startsWith('aaaa')).toBe(true);
-    // The CJK char itself must not appear (it was truncated)
     expect(result.stdout).not.toContain('한');
   });
 
-  it('non-zero exit: returns exitCode 1 without throwing', () => {
-    mockSpawnSync.mockReturnValue({
-      status: 1,
-      stdout: Buffer.from('err'),
-      stderr: Buffer.from('something'),
-      signal: null,
-      pid: 123,
-      output: [],
-      error: undefined,
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+  it('maxStdoutBytes=0 sentinel: 2MB stdout passes through untouched', async () => {
+    const bigStdout = Buffer.from('a'.repeat(2 * 1024 * 1024), 'utf8');
+    mockSpawn.mockReturnValue(
+      fakeProc({ stdoutChunks: [bigStdout], exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
 
-    const result = runSsh('host1', ['false'], baseOpts);
+    const opts = { ...baseOpts, maxStdoutBytes: 0 };
+    const result = await runSsh('host1', ['cat'], opts);
+
+    expect(result.truncated.stdout).toBe(false);
+    expect(Buffer.byteLength(result.stdout, 'utf8')).toBe(bigStdout.length);
+    expect(result.stdout).not.toContain('[truncated]');
+  });
+
+  it('maxStderrBytes=0 sentinel: stderr passes through untouched', async () => {
+    const bigStderr = Buffer.from('e'.repeat(2 * 1024 * 1024), 'utf8');
+    mockSpawn.mockReturnValue(
+      fakeProc({ stderrChunks: [bigStderr], exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
+
+    const opts = { ...baseOpts, maxStderrBytes: 0 };
+    const result = await runSsh('host1', ['cat'], opts);
+
+    expect(result.truncated.stderr).toBe(false);
+    expect(Buffer.byteLength(result.stderr, 'utf8')).toBe(bigStderr.length);
+    expect(result.stderr).not.toContain('[truncated]');
+  });
+
+  it('non-zero exit: returns exitCode 1 without throwing', async () => {
+    mockSpawn.mockReturnValue(
+      fakeProc({
+        stdoutChunks: [Buffer.from('err')],
+        stderrChunks: [Buffer.from('something')],
+        exitCode: 1,
+      }) as unknown as cp.ChildProcess,
+    );
+
+    const result = await runSsh('host1', ['false'], baseOpts);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe('err');
@@ -150,20 +211,26 @@ describe('runSsh', () => {
     expect(result.timedOut).toBe(false);
   });
 
-  it('argv assembly: second arg to spawnSync has correct structure', () => {
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: Buffer.from(''),
-      stderr: Buffer.from(''),
-      signal: null,
-      pid: 123,
-      output: [],
-      error: undefined,
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+  it('spawn error (ENOENT): settles with exitCode null and surfaces error message in stderr', async () => {
+    mockSpawn.mockReturnValue(
+      fakeProc({ emitError: new Error('spawn /nope ENOENT') }) as unknown as cp.ChildProcess,
+    );
 
-    runSsh('host1', ['echo', 'hi'], baseOpts);
+    const result = await runSsh('host1', ['nope'], baseOpts);
 
-    const call = mockSpawnSync.mock.calls[0];
+    expect(result.exitCode).toBeNull();
+    expect(result.stderr).toContain('ENOENT');
+    expect(result.timedOut).toBe(false);
+  });
+
+  it('argv assembly: second arg to spawn has correct structure', async () => {
+    mockSpawn.mockReturnValue(
+      fakeProc({ exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
+
+    await runSsh('host1', ['echo', 'hi'], baseOpts);
+
+    const call = mockSpawn.mock.calls[0];
     expect(call[1]).toEqual([
       '-F', '/tmp/ssh_config',
       '-o', 'BatchMode=yes',
@@ -176,21 +243,21 @@ describe('runSsh', () => {
     ]);
   });
 
-  it('clean env: spawnSync receives only PATH in env', () => {
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: Buffer.from(''),
-      stderr: Buffer.from(''),
-      signal: null,
-      pid: 123,
-      output: [],
-      error: undefined,
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+  it('clean env: spawn receives only PATH in env, shell:false, stdio piped', async () => {
+    mockSpawn.mockReturnValue(
+      fakeProc({ exitCode: 0 }) as unknown as cp.ChildProcess,
+    );
 
-    runSsh('host1', ['uptime'], baseOpts);
+    await runSsh('host1', ['uptime'], baseOpts);
 
-    const opts = mockSpawnSync.mock.calls[0][2] as { env: Record<string, string> };
+    const opts = mockSpawn.mock.calls[0][2] as {
+      env: Record<string, string>;
+      shell: boolean;
+      stdio: unknown;
+    };
     expect(opts.env.PATH).toBe('/usr/bin:/bin');
     expect(Object.keys(opts.env).length).toBe(1);
+    expect(opts.shell).toBe(false);
+    expect(opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
   });
 });

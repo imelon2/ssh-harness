@@ -14,8 +14,8 @@ hosts:
 
 settings:
   timeoutMs: 30000
-  maxStdoutBytes: 262144
-  maxStderrBytes: 65536
+  maxStdoutBytes: 262144   # 0 = no cap (passes full stdout through)
+  maxStderrBytes: 65536    # 0 = no cap
 
 rules:
   - id: get_uptime

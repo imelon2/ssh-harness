@@ -3,13 +3,42 @@ import * as fs from 'fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as cp from 'node:child_process';
+import { EventEmitter } from 'node:events';
 
 vi.mock('node:child_process');
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
   return { ...actual };
 });
-const mockSpawnSync = vi.mocked(cp.spawnSync);
+const mockSpawn = vi.mocked(cp.spawn);
+
+function fakeProc(opts: {
+  stdoutChunks?: Buffer[];
+  stderrChunks?: Buffer[];
+  exitCode?: number | null;
+  emitError?: Error;
+}): cp.ChildProcess {
+  const proc = new EventEmitter() as cp.ChildProcess & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    killed: boolean;
+    kill: (sig?: NodeJS.Signals | number) => boolean;
+  };
+  proc.stdout = new EventEmitter() as cp.ChildProcess['stdout'] as never;
+  proc.stderr = new EventEmitter() as cp.ChildProcess['stderr'] as never;
+  proc.killed = false;
+  proc.kill = () => { proc.killed = true; return true; };
+  setImmediate(() => {
+    if (opts.emitError !== undefined) {
+      (proc as EventEmitter).emit('error', opts.emitError);
+      return;
+    }
+    for (const c of opts.stdoutChunks ?? []) (proc.stdout as EventEmitter).emit('data', c);
+    for (const c of opts.stderrChunks ?? []) (proc.stderr as EventEmitter).emit('data', c);
+    (proc as EventEmitter).emit('close', opts.exitCode ?? 0, null);
+  });
+  return proc;
+}
 
 import {
   buildBuiltinTools,
@@ -45,12 +74,12 @@ rules:
     template: { host: "{host}", argv: [uptime] }
 `;
     fs.writeFileSync(allowlistPath, yaml);
-    mockSpawnSync.mockReset();
+    mockSpawn.mockReset();
   });
 
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
-    mockSpawnSync.mockReset();
+    mockSpawn.mockReset();
   });
 
   function makeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
@@ -66,18 +95,14 @@ rules:
   }
 
   function mockHostExitStatus(statusByHost: Record<string, number>) {
-    mockSpawnSync.mockImplementation((_bin: unknown, argvUnknown: unknown) => {
+    mockSpawn.mockImplementation((_bin: unknown, argvUnknown: unknown) => {
       const argv = Array.isArray(argvUnknown) ? (argvUnknown as string[]) : [];
       const host = argv.find((a) => statusByHost[a] !== undefined) ?? '';
       const status = statusByHost[host] ?? 1;
-      return {
-        status,
-        stdout: Buffer.from(''),
-        stderr: status === 0 ? Buffer.from('') : Buffer.from('connection refused'),
-        signal: null,
-        pid: 1234,
-        output: [],
-      } as unknown as ReturnType<typeof cp.spawnSync>;
+      return fakeProc({
+        stderrChunks: status === 0 ? [] : [Buffer.from('connection refused')],
+        exitCode: status,
+      });
     });
   }
 
@@ -100,7 +125,7 @@ rules:
       sshConfigPath,
       checked: false,
     });
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('list-only path also accepts { checkHealth: false }', async () => {
@@ -109,7 +134,7 @@ rules:
     expect(result.isError).toBeFalsy();
     const body = JSON.parse(result.content[0].text);
     expect(body.checked).toBe(false);
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('check path reports reachable:true when ssh exit status is 0', async () => {
@@ -122,7 +147,7 @@ rules:
     expect(body.results).toHaveLength(2);
     expect(body.results.every((r: { reachable: boolean }) => r.reachable)).toBe(true);
     expect(body.summary).toEqual({ total: 2, reachable: 2, unreachable: 0 });
-    expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
   });
 
   it('check path reports reachable:false when ssh exit status is non-zero', async () => {
@@ -142,19 +167,12 @@ rules:
 
   it('check path isolates a thrown runSsh error to one host', async () => {
     let callIndex = 0;
-    mockSpawnSync.mockImplementation(() => {
+    mockSpawn.mockImplementation(() => {
       callIndex++;
       if (callIndex === 1) {
-        throw new Error('spawn fail for first host');
+        return fakeProc({ emitError: new Error('spawn fail for first host') });
       }
-      return {
-        status: 0,
-        stdout: Buffer.from(''),
-        stderr: Buffer.from(''),
-        signal: null,
-        pid: 4242,
-        output: [],
-      } as unknown as ReturnType<typeof cp.spawnSync>;
+      return fakeProc({ exitCode: 0 });
     });
     const registry = buildRegistry(allowlistPath);
     const result = await executeBuiltinCall(registry, makeConfig(), { checkHealth: true });
@@ -172,7 +190,7 @@ rules:
     const result = await executeBuiltinCall(registry, makeConfig(), { checkHealth: true, surprise: 1 });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/schema error/i);
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('writes one audit line per call with the builtin ruleId', async () => {

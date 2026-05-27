@@ -4,13 +4,37 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import fc from 'fast-check';
 import * as cp from 'node:child_process';
+import { EventEmitter } from 'node:events';
 
 vi.mock('node:child_process');
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
   return { ...actual };
 });
-const mockSpawnSync = vi.mocked(cp.spawnSync);
+const mockSpawn = vi.mocked(cp.spawn);
+
+function fakeProc(opts: {
+  stdoutChunks?: Buffer[];
+  stderrChunks?: Buffer[];
+  exitCode?: number | null;
+}): cp.ChildProcess {
+  const proc = new EventEmitter() as cp.ChildProcess & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    killed: boolean;
+    kill: (sig?: NodeJS.Signals | number) => boolean;
+  };
+  proc.stdout = new EventEmitter() as cp.ChildProcess['stdout'] as never;
+  proc.stderr = new EventEmitter() as cp.ChildProcess['stderr'] as never;
+  proc.killed = false;
+  proc.kill = () => { proc.killed = true; return true; };
+  setImmediate(() => {
+    for (const c of opts.stdoutChunks ?? []) (proc.stdout as EventEmitter).emit('data', c);
+    for (const c of opts.stderrChunks ?? []) (proc.stderr as EventEmitter).emit('data', c);
+    (proc as EventEmitter).emit('close', opts.exitCode ?? 0, null);
+  });
+  return proc;
+}
 
 import { executeRuleCall, createServer } from '../src/server.js';
 import { buildRegistry } from '../src/allowlist.js';
@@ -31,19 +55,15 @@ describe('ssh-harness server integration', () => {
     auditPath = path.join(dir, 'audit.log');
     sshConfigPath = path.join(dir, 'ssh_config');
     fs.writeFileSync(sshConfigPath, 'Host localhost\n  HostName 127.0.0.1\n');
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: Buffer.from('ok\n'),
-      stderr: Buffer.from(''),
-      signal: null,
-      pid: 1234,
-      output: [],
-    } as unknown as ReturnType<typeof cp.spawnSync>);
+    mockSpawn.mockImplementation(() => fakeProc({
+      stdoutChunks: [Buffer.from('ok\n')],
+      exitCode: 0,
+    }));
   });
 
   afterEach(() => {
     fs.rmSync(tmp, { recursive: true, force: true });
-    mockSpawnSync.mockReset();
+    mockSpawn.mockReset();
   });
 
   function setupRule(rules: string) {
@@ -76,7 +96,7 @@ ${rules}
     const result = await executeRuleCall(registry, 'does_not_exist', { host: 'localhost' }, makeConfig());
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/unknown rule/i);
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('strips extra/unknown params (.strict())', async () => {
@@ -89,7 +109,7 @@ ${rules}
     const result = await executeRuleCall(registry, 'r1', { host: 'localhost', extra: 'param' }, makeConfig());
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/schema error/i);
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('rejects schema-valid but adversarial integer (C-1)', async () => {
@@ -104,7 +124,7 @@ ${rules}
     const result = await executeRuleCall(registry, 'r1', { host: 'localhost', lines: 999999999 }, makeConfig());
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/schema error/i);
-    expect(mockSpawnSync).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('renders adversarial param values as literal argv (fast-check property)', () => {

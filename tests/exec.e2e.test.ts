@@ -4,8 +4,8 @@ import { runSsh } from '../src/exec.js';
 const RUN_E2E = process.env.SSH_HARNESS_E2E === '1';
 
 describe.skipIf(!RUN_E2E)('exec e2e', () => {
-  it('runs uptime against localhost', () => {
-    const result = runSsh('localhost', ['uptime'], {
+  it('runs uptime against localhost', async () => {
+    const result = await runSsh('localhost', ['uptime'], {
       sshBin: '/usr/bin/ssh',
       timeoutMs: 10000,
       maxStdoutBytes: 4096,
