@@ -1,12 +1,12 @@
 {
   "name": "ssh-harness",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Allowlist-driven SSH harness for Claude Code (MCP server + skills + hooks). Read-only diagnostic tools over SSH, typed/validated/audited.",
   "mcpServers": {
     "ssh-harness": {
       "command": "node",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/bridge/src/server.js"
+        "${CLAUDE_PLUGIN_ROOT}/bridge/server.js"
       ]
     }
   },

@@ -2,7 +2,7 @@
   "mcpServers": {
     "ssh-harness": {
       "command": "node",
-      "args": ["bridge/src/server.js"]
+      "args": ["bridge/server.js"]
     }
   }
 }

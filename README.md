@@ -101,7 +101,7 @@ Reads `<cwd>/.ssh_harness/{allowlist.yaml, ssh_config}` and serves MCP over stdi
 Verify tool registration and protocol behavior with the official inspector (pinned version):
 
 ```bash
-npx @modelcontextprotocol/inspector@latest node bridge/src/server.js
+npx @modelcontextprotocol/inspector@latest node bridge/server.js
 ```
 
 5-step checklist:

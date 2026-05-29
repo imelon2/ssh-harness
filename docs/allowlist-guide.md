@@ -256,10 +256,10 @@ argv: [curl, "https://{host}:{port}/health"]
    - [ ] string param에 `enum` 또는 `pattern` (anchor 박힘)
    - [ ] integer param에 `maximum`
    - [ ] `description`에 use-when / use-not-when 명시
-4. **lint 통과 확인:** `npm test` 또는 직접 `node bridge/src/server.js`로 서버 띄워서 startup banner에 rule count 확인.
+4. **lint 통과 확인:** `npm test` 또는 직접 `node bridge/server.js`로 서버 띄워서 startup banner에 rule count 확인.
 5. **MCP Inspector로 호출 테스트:**
    ```bash
-   npx @modelcontextprotocol/inspector@latest node bridge/src/server.js
+   npx @modelcontextprotocol/inspector@latest node bridge/server.js
    ```
 6. **`.ssh_harness/audit.log` 확인:** 한 줄 JSON으로 invocation이 기록되는지.
 
