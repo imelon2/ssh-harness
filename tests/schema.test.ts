@@ -8,10 +8,16 @@ describe('specToZod / buildShape', () => {
     expect(schema.safeParse('c').success).toBe(false);
   });
 
-  it('2. string pattern — accepts match, rejects non-match', () => {
-    const schema = specToZod({ type: 'string', pattern: '^x' });
-    expect(schema.parse('xyz')).toBe('xyz');
-    expect(schema.safeParse('abc').success).toBe(false);
+  it('2. string pattern — fully anchored whole-value whitelist (rejects superstrings)', () => {
+    // A `pattern` is a whole-value whitelist (`^(?:…)$`), not a substring/prefix
+    // test — otherwise "[a-z0-9]+" would accept "abc; rm -rf /".
+    const schema = specToZod({ type: 'string', pattern: 'x.*' });
+    expect(schema.parse('xyz')).toBe('xyz');               // whole value matches
+    expect(schema.safeParse('abc').success).toBe(false);   // no match
+
+    const anchored = specToZod({ type: 'string', pattern: '[a-z]+' });
+    expect(anchored.safeParse('abc').success).toBe(true);
+    expect(anchored.safeParse('abc; rm -rf /').success).toBe(false);  // superstring rejected
   });
 
   it('3. integer range — accepts in-range, rejects out-of-range and non-integer types', () => {

@@ -58,4 +58,36 @@ rules:
     expect(registry.count()).toBe(0);
     expect(tools.map((t) => t.name)).toEqual(['ssh_harness_get_allow_host_lists']);
   });
+
+  // Security: the auto-seed default must expose NO hosts / NO rule tools — the
+  // operator opts in, rather than the LLM silently gaining access to every host
+  // in ssh_config on first run.
+  it('auto-seeds a SAFE empty allowlist by default (no hosts, no rule tools)', () => {
+    const env = { ...process.env, CLAUDE_PROJECT_DIR: tmp };
+    delete (env as Record<string, string | undefined>).SSH_HARNESS_ALLOWLIST;
+    delete (env as Record<string, string | undefined>).SSH_HARNESS_SEED_WILDCARD;
+
+    const { registry, tools } = createServer(env);
+    expect(registry.hosts()).toEqual([]);
+    expect(registry.count()).toBe(0);
+    expect(tools.map((t) => t.name)).toEqual(['ssh_harness_get_allow_host_lists']);
+
+    const seeded = fs.readFileSync(path.join(tmp, '.ssh_harness', 'allowlist.yaml'), 'utf8');
+    expect(seeded).toMatch(/allowHosts:\s*\[\]/);
+    expect(seeded).toMatch(/rules:\s*\[\]/);
+  });
+
+  // Rule tools advertise read-only behavior via MCP annotations + structured output.
+  it('seeds wildcard tools with read-only annotations and an output schema when opted in', () => {
+    const sshConfig = path.join(tmp, 'ssh_config');
+    fs.writeFileSync(sshConfig, 'Host h1\n  HostName 127.0.0.1\n');
+    const env = { ...process.env, CLAUDE_PROJECT_DIR: tmp, SSH_HARNESS_SEED_WILDCARD: '1', SSH_HARNESS_CONFIG: sshConfig };
+    delete (env as Record<string, string | undefined>).SSH_HARNESS_ALLOWLIST;
+
+    const { tools } = createServer(env);
+    const rule = tools.find((t) => t.name === 'ssh_harness_get_uptime');
+    expect(rule).toBeDefined();
+    expect(rule!.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: true });
+    expect(rule!.outputSchema).toBeDefined();
+  });
 });

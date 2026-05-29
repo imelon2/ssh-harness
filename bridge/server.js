@@ -2987,7 +2987,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3014,7 +3014,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3645,7 +3645,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3903,7 +3903,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -14222,6 +14222,7 @@ var require_dist2 = __commonJS({
 // src/server.ts
 import * as fs4 from "node:fs";
 import * as path2 from "node:path";
+import { fileURLToPath } from "node:url";
 
 // node_modules/zod/v3/external.js
 var external_exports = {};
@@ -26314,7 +26315,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -26331,7 +26332,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -26409,7 +26410,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -26670,12 +26671,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -27775,7 +27776,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -28424,12 +28425,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -28442,8 +28443,7 @@ var DEFAULTS = {
   timeoutMs: 3e4,
   maxStdoutBytes: 262144,
   maxStderrBytes: 65536,
-  sshBin: "/usr/bin/ssh",
-  identityFile: void 0
+  sshBin: "/usr/bin/ssh"
 };
 var ParamSpecSchema = external_exports.object({
   type: external_exports.enum(["string", "integer"]),
@@ -28665,12 +28665,13 @@ function patternRejectsDashLead(pattern) {
   stripped = stripped.replace(/(\$|\\Z)$/, "");
   let re;
   try {
-    re = new RegExp("^" + stripped);
+    re = new RegExp("^(?:" + stripped + ")$");
   } catch {
     return false;
   }
-  if (re.exec("-") !== null || re.exec("-" + "a".repeat(32)) !== null) {
-    return false;
+  const dashSeconds = ["", "-", "a", "a".repeat(32), "o", "1", "0", "9", "oProxyCommand=x", "F/tmp/x"];
+  for (const tail2 of dashSeconds) {
+    if (re.test("-" + tail2)) return false;
   }
   return true;
 }
@@ -28681,7 +28682,7 @@ function specToZod(spec) {
   if (spec.type === "string") {
     let str = external_exports.string();
     if (spec.pattern !== void 0) {
-      str = str.regex(new RegExp(spec.pattern));
+      str = str.regex(new RegExp("^(?:" + spec.pattern + ")$"));
     }
     if (spec.enum !== void 0) {
       str = external_exports.enum(spec.enum);
@@ -28808,7 +28809,7 @@ async function runSsh(host, argv, opts) {
     "--",
     ...argv
   ];
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     const t0 = performance.now();
     const proc = spawn(opts.sshBin, sshArgv, {
       shell: false,
@@ -28820,24 +28821,32 @@ async function runSsh(host, argv, opts) {
     let timedOut = false;
     let spawnError;
     let settled = false;
+    let exited = false;
+    let killTimer;
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
       proc.kill("SIGTERM");
-      setTimeout(() => {
-        if (!proc.killed) proc.kill("SIGKILL");
-      }, 2e3).unref();
+      killTimer = setTimeout(() => {
+        if (!exited) proc.kill("SIGKILL");
+      }, 2e3);
+      killTimer.unref();
     }, opts.timeoutMs);
+    const clearTimers = () => {
+      clearTimeout(timeoutHandle);
+      if (killTimer) clearTimeout(killTimer);
+    };
     proc.stdout?.on("data", (chunk) => stdoutCollector.push(chunk));
     proc.stderr?.on("data", (chunk) => stderrCollector.push(chunk));
     proc.on("error", (err) => {
       spawnError = err;
+      exited = true;
       if (!settled) {
         settled = true;
-        clearTimeout(timeoutHandle);
+        clearTimers();
         const durationMs = performance.now() - t0;
         const stdoutResult = stdoutCollector.finalize();
         const stderrResult = stderrCollector.finalize();
-        resolve({
+        resolve2({
           stdout: stdoutResult.text,
           stderr: stderrResult.text || spawnError.message,
           exitCode: null,
@@ -28849,13 +28858,14 @@ async function runSsh(host, argv, opts) {
       }
     });
     proc.on("close", (code, signal) => {
+      exited = true;
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutHandle);
+      clearTimers();
       const durationMs = performance.now() - t0;
       const stdoutResult = stdoutCollector.finalize();
       const stderrResult = stderrCollector.finalize();
-      resolve({
+      resolve2({
         stdout: stdoutResult.text,
         stderr: stderrResult.text,
         exitCode: code,
@@ -28879,8 +28889,22 @@ var AuditAppendError = class extends Error {
   }
   cause;
 };
+var DEFAULT_MAX_AUDIT_BYTES = 5 * 1024 * 1024;
+function maxAuditBytes() {
+  const v = Number(process.env.SSH_HARNESS_AUDIT_MAX_BYTES);
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_AUDIT_BYTES;
+}
+function rotateIfOversized(path3) {
+  try {
+    if (fs2.statSync(path3).size >= maxAuditBytes()) {
+      fs2.renameSync(path3, path3 + ".1");
+    }
+  } catch {
+  }
+}
 function appendAudit(path3, event, opts) {
   fs2.mkdirSync(nodePath.dirname(path3), { recursive: true, mode: 448 });
+  rotateIfOversized(path3);
   const line = JSON.stringify(event) + "\n";
   try {
     fs2.appendFileSync(path3, line, { encoding: "utf8", mode: 384 });
@@ -28966,6 +28990,21 @@ function expandTilde(p) {
 }
 
 // src/tools.ts
+var EXEC_OUTPUT_SHAPE = {
+  host: external_exports.string(),
+  exitCode: external_exports.number().int().nullable(),
+  durationMs: external_exports.number(),
+  timedOut: external_exports.boolean(),
+  truncated: external_exports.object({ stdout: external_exports.boolean(), stderr: external_exports.boolean() }),
+  stdout: external_exports.string(),
+  stderr: external_exports.string()
+};
+var RULE_TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true
+};
 function buildTools(registry2, config2) {
   const tools = [];
   for (const rule of registry2.list()) {
@@ -28975,6 +29014,8 @@ function buildTools(registry2, config2) {
       name: rule.tool.name,
       description: rule.tool.description,
       paramsSchema,
+      outputSchema: EXEC_OUTPUT_SHAPE,
+      annotations: { title: rule.tool.name, ...RULE_TOOL_ANNOTATIONS },
       handler: async (args) => {
         return executeRuleCall(registry2, ruleId, args ?? {}, config2);
       }
@@ -28990,14 +29031,34 @@ var HEALTH_CHECK_TIMEOUT_MS = 7e3;
 var HEALTH_CHECK_SSH_STDOUT_BYTES = 1024;
 var HEALTH_CHECK_SSH_BUFFER_BYTES = 1024;
 var HEALTH_CHECK_ERROR_TRUNCATE = 256;
+var HEALTH_CHECK_CONCURRENCY = 5;
+var HEALTH_CHECK_TOTAL_DEADLINE_MS = 3e4;
 var inputSchema = external_exports.object({
   checkHealth: external_exports.boolean().optional()
 }).strict();
+var hostHealthSchema = external_exports.object({
+  host: external_exports.string(),
+  reachable: external_exports.boolean(),
+  exitCode: external_exports.number().int().nullable(),
+  durationMs: external_exports.number(),
+  timedOut: external_exports.boolean(),
+  error: external_exports.string().optional()
+});
+var outputShape = {
+  hosts: external_exports.array(external_exports.string()),
+  sshConfigPath: external_exports.string(),
+  checked: external_exports.boolean(),
+  results: external_exports.array(hostHealthSchema).optional(),
+  summary: external_exports.object({ total: external_exports.number(), reachable: external_exports.number(), unreachable: external_exports.number() }).optional(),
+  partial: external_exports.boolean().optional()
+};
 function buildBuiltinTools(registry2, config2) {
   const tool = {
     name: BUILTIN_TOOL_NAME,
     description: "Return the list of SSH host aliases this MCP is allowed to reach (sourced from allowlist.yaml hosts.allowHosts).\nRead-only. Optional input { checkHealth?: boolean }: when true, opens one short SSH connection (`ssh ... -- true`, ConnectTimeout=5s) per host to verify reachability.\nUse when: discovering which hosts the MCP can target before invoking host-specific tools, or verifying connectivity before a maintenance check.",
     paramsSchema: inputSchema,
+    outputSchema: outputShape,
+    annotations: { title: BUILTIN_TOOL_NAME, readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: async (args) => executeBuiltinCall(registry2, config2, args)
   };
   return [tool];
@@ -29031,53 +29092,73 @@ async function executeBuiltinCall(registry2, config2, rawArgs) {
   }
   const settings = registry2.settings();
   const t0 = Date.now();
-  const results = [];
-  let firstError = "";
-  for (const host of hosts) {
-    const startedAt = Date.now();
-    let execResult;
-    let thrownError;
-    try {
-      execResult = await runSsh(host, ["true"], {
-        sshBin: settings.sshBin,
-        timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
-        maxStdoutBytes: HEALTH_CHECK_SSH_STDOUT_BYTES,
-        maxStderrBytes: HEALTH_CHECK_SSH_BUFFER_BYTES,
-        configPath: config2.sshConfigPath,
-        identityFile: settings.identityFile
-      });
-    } catch (err) {
-      thrownError = err instanceof Error ? err.message : String(err);
-    }
-    if (thrownError !== void 0 || execResult === void 0) {
-      const msg = thrownError ?? "exec returned no result";
-      const entry2 = {
+  const deadline = t0 + HEALTH_CHECK_TOTAL_DEADLINE_MS;
+  const results = new Array(hosts.length);
+  let partial2 = false;
+  let next = 0;
+  const worker = async () => {
+    for (; ; ) {
+      const i = next++;
+      if (i >= hosts.length) return;
+      const host = hosts[i];
+      if (Date.now() >= deadline) {
+        results[i] = {
+          host,
+          reachable: false,
+          exitCode: null,
+          durationMs: 0,
+          timedOut: false,
+          error: "skipped: health-check deadline reached"
+        };
+        partial2 = true;
+        continue;
+      }
+      const startedAt = Date.now();
+      let execResult;
+      let thrownError;
+      try {
+        execResult = await runSsh(host, ["true"], {
+          sshBin: settings.sshBin,
+          timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
+          maxStdoutBytes: HEALTH_CHECK_SSH_STDOUT_BYTES,
+          maxStderrBytes: HEALTH_CHECK_SSH_BUFFER_BYTES,
+          configPath: config2.sshConfigPath,
+          identityFile: settings.identityFile
+        });
+      } catch (err) {
+        thrownError = err instanceof Error ? err.message : String(err);
+      }
+      if (thrownError !== void 0 || execResult === void 0) {
+        const msg = thrownError ?? "exec returned no result";
+        results[i] = {
+          host,
+          reachable: false,
+          exitCode: null,
+          durationMs: Date.now() - startedAt,
+          timedOut: false,
+          error: truncate(msg, HEALTH_CHECK_ERROR_TRUNCATE)
+        };
+        continue;
+      }
+      const reachable = execResult.exitCode === 0 && !execResult.timedOut;
+      const entry = {
         host,
-        reachable: false,
-        exitCode: null,
-        durationMs: Date.now() - startedAt,
-        timedOut: false,
-        error: truncate(msg, HEALTH_CHECK_ERROR_TRUNCATE)
+        reachable,
+        exitCode: execResult.exitCode,
+        durationMs: Math.round(execResult.durationMs),
+        timedOut: execResult.timedOut
       };
-      results.push(entry2);
-      if (firstError === "") firstError = msg;
-      continue;
+      if (!reachable) {
+        const tail2 = execResult.stderr.trim() || (execResult.timedOut ? "timed out" : "ssh failed");
+        entry.error = truncate(tail2, HEALTH_CHECK_ERROR_TRUNCATE);
+      }
+      results[i] = entry;
     }
-    const reachable = execResult.exitCode === 0 && !execResult.timedOut;
-    const entry = {
-      host,
-      reachable,
-      exitCode: execResult.exitCode,
-      durationMs: Math.round(execResult.durationMs),
-      timedOut: execResult.timedOut
-    };
-    if (!reachable) {
-      const tail2 = execResult.stderr.trim() || (execResult.timedOut ? "timed out" : "ssh failed");
-      entry.error = truncate(tail2, HEALTH_CHECK_ERROR_TRUNCATE);
-      if (firstError === "") firstError = tail2;
-    }
-    results.push(entry);
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(HEALTH_CHECK_CONCURRENCY, hosts.length) }, () => worker())
+  );
+  const firstError = results.find((r) => r.error)?.error ?? "";
   const reachableCount = results.filter((r) => r.reachable).length;
   const unreachableCount = results.length - reachableCount;
   const summary = { total: results.length, reachable: reachableCount, unreachable: unreachableCount };
@@ -29086,7 +29167,8 @@ async function executeBuiltinCall(registry2, config2, rawArgs) {
     sshConfigPath: config2.sshConfigPath,
     checked: true,
     results,
-    summary
+    summary,
+    ...partial2 ? { partial: true } : {}
   };
   const totalDuration = Date.now() - t0;
   const event = makeEvent(
@@ -29142,6 +29224,7 @@ function safeAudit(config2, event) {
 function okResult(body, isError) {
   return {
     content: [{ type: "text", text: JSON.stringify(body, null, 2) }],
+    structuredContent: body,
     isError
   };
 }
@@ -29163,8 +29246,53 @@ function redactUnknown(v) {
 }
 
 // src/server.ts
-var VERSION = "0.1.0";
-var DEFAULT_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
+function resolveVersion() {
+  try {
+    const pkgPath = path2.resolve(path2.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    const pkg = JSON.parse(fs4.readFileSync(pkgPath, "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+var VERSION = resolveVersion();
+var SAFE_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
+# Schema: docs/allowlist-guide.md, README.md
+#
+# This default is intentionally EMPTY \u2014 no SSH rule tools are exposed until you
+# opt hosts and rules in. The read-only host-list tool works regardless.
+#
+# Quick start (enable read-only uptime / df -h / ps auxf for every ssh_config host):
+#   1. set:        allowHosts: &hosts ["*"]
+#   2. uncomment:  the rules block below
+# Or delete this file and re-launch with SSH_HARNESS_SEED_WILDCARD=1 to seed that
+# configuration automatically.
+version: 2
+
+hosts:
+  allowHosts: []        # [] = no hosts. ["*"] = every ssh_config Host alias. Or list aliases explicitly.
+
+settings:
+  timeoutMs: 30000
+  maxStdoutBytes: 262144
+  maxStderrBytes: 65536
+
+rules: []
+# rules:
+#   - id: get_uptime
+#     tool: { name: ssh_harness_get_uptime, description: "uptime (read-only)" }
+#     params: { host: { type: string, enum: *hosts } }
+#     template: { host: "{host}", argv: [uptime] }
+#   - id: get_disk_usage
+#     tool: { name: ssh_harness_get_disk_usage, description: "df -h (read-only)" }
+#     params: { host: { type: string, enum: *hosts } }
+#     template: { host: "{host}", argv: [df, -h] }
+#   - id: get_process_top
+#     tool: { name: ssh_harness_get_process_top, description: "ps auxf (read-only)" }
+#     params: { host: { type: string, enum: *hosts } }
+#     template: { host: "{host}", argv: [ps, auxf] }
+`;
+var WILDCARD_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
 # Schema: docs/allowlist-guide.md, README.md
 version: 2
 
@@ -29222,11 +29350,12 @@ rules:
 `;
 function ensureAllowlistSeeded(allowlistPath, env) {
   if (env.SSH_HARNESS_ALLOWLIST) return;
+  const wildcard = env.SSH_HARNESS_SEED_WILDCARD === "1";
   try {
     if (fs4.existsSync(allowlistPath)) return;
     fs4.mkdirSync(path2.dirname(allowlistPath), { recursive: true });
-    fs4.writeFileSync(allowlistPath, DEFAULT_ALLOWLIST_YAML, { flag: "wx" });
-    console.error(`[ssh-harness] seeded default allowlist at ${allowlistPath}`);
+    fs4.writeFileSync(allowlistPath, wildcard ? WILDCARD_ALLOWLIST_YAML : SAFE_ALLOWLIST_YAML, { flag: "wx" });
+    console.error(`[ssh-harness] seeded ${wildcard ? "wildcard" : "empty (safe)"} default allowlist at ${allowlistPath}`);
   } catch (err) {
     console.error(`[ssh-harness] could not seed default allowlist: ${err.message}`);
   }
@@ -29300,7 +29429,12 @@ function createServer(env = process.env) {
   for (const tool of tools) {
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.paramsSchema.shape },
+      {
+        description: tool.description,
+        inputSchema: tool.paramsSchema.shape,
+        ...tool.outputSchema ? { outputSchema: tool.outputSchema } : {},
+        ...tool.annotations ? { annotations: tool.annotations } : {}
+      },
       async (args) => tool.handler(args)
     );
   }
@@ -29316,6 +29450,7 @@ async function executeRuleCall(registry2, ruleId, rawArgs, config2) {
   const shape = buildShape(rule.params);
   const parsed = shape.safeParse(rawArgs);
   if (!parsed.success) {
+    const safeMsg = redactSecretsInText(parsed.error.message, rule.params, rawArgs);
     const ev = baseEvent(
       rule.id,
       rule.tool.name,
@@ -29327,10 +29462,10 @@ async function executeRuleCall(registry2, ruleId, rawArgs, config2) {
       0,
       "",
       "",
-      parsed.error.message
+      safeMsg
     );
     safeAppend(config2, ev);
-    return errorResult2(`schema error: ${parsed.error.message}`);
+    return errorResult2(`schema error: ${safeMsg}`);
   }
   const args = parsed.data;
   if ("host" in args) {
@@ -29402,6 +29537,8 @@ async function executeRuleCall(registry2, ruleId, rawArgs, config2) {
     safeAppend(config2, ev);
     return errorResult2(`exec error: ${err.message}`);
   }
+  const safeStdout = redactSecretsInText(result.stdout, rule.params, args);
+  const safeStderr = redactSecretsInText(result.stderr, rule.params, args);
   const outcome = result.timedOut ? "timeout" : result.exitCode === 0 ? "ok" : "exec_error";
   const event = {
     ts: (/* @__PURE__ */ new Date()).toISOString(),
@@ -29413,8 +29550,8 @@ async function executeRuleCall(registry2, ruleId, rawArgs, config2) {
     host,
     exitCode: result.exitCode,
     durationMs: result.durationMs,
-    stdoutTail: tail(result.stdout, 512),
-    stderrTail: tail(result.stderr, 512)
+    stdoutTail: tail(safeStdout, 512),
+    stderrTail: tail(safeStderr, 512)
   };
   try {
     appendAudit(config2.auditPath, event, { bestEffort: config2.auditBestEffort });
@@ -29429,31 +29566,42 @@ async function executeRuleCall(registry2, ruleId, rawArgs, config2) {
     }
     throw err;
   }
+  const body = {
+    host,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs,
+    timedOut: result.timedOut,
+    truncated: result.truncated,
+    stdout: safeStdout,
+    stderr: safeStderr
+  };
   return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        host,
-        exitCode: result.exitCode,
-        durationMs: result.durationMs,
-        timedOut: result.timedOut,
-        truncated: result.truncated,
-        stdout: result.stdout,
-        stderr: result.stderr
-      }, null, 2)
-    }],
+    content: [{ type: "text", text: JSON.stringify(body, null, 2) }],
+    structuredContent: body,
     isError: outcome !== "ok"
   };
 }
 function tail(s, n) {
   return s.length <= n ? s : s.slice(-n);
 }
-function redactArgv(argv, specs, args) {
-  const secrets = /* @__PURE__ */ new Set();
+function secretValues(specs, args) {
+  const out = [];
   for (const [k, spec] of Object.entries(specs)) {
-    if (spec.secret) secrets.add(String(args[k]));
+    if (spec.secret) {
+      const v = String(args[k]);
+      if (v) out.push(v);
+    }
   }
-  return argv.map((a) => secrets.has(a) ? "[REDACTED]" : a);
+  return out;
+}
+function redactArgv(argv, specs, args) {
+  const secrets = secretValues(specs, args);
+  if (secrets.length === 0) return argv;
+  return argv.map((a) => secrets.reduce((acc, s) => acc.split(s).join("[REDACTED]"), a));
+}
+function redactSecretsInText(text, specs, args) {
+  const secrets = secretValues(specs, args);
+  return secrets.reduce((acc, s) => acc.split(s).join("[REDACTED]"), text);
 }
 function errorResult2(msg) {
   return { content: [{ type: "text", text: msg }], isError: true };

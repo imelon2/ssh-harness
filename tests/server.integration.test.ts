@@ -183,6 +183,46 @@ rules:
     }
   });
 
+  it('redacts secret param values even when embedded in an argv token', async () => {
+    const registry = setupRule(`
+  - id: r1
+    tool: { name: ssh_r1, description: r1 }
+    params:
+      host: { type: string, enum: *hosts }
+      token: { type: string, pattern: "[A-Za-z0-9]+", secret: true }
+    template: { host: "{host}", argv: [echo, "--token={token}"] }
+`);
+    const result = await executeRuleCall(registry, 'r1', { host: 'localhost', token: 'SECRETvalue123' }, makeConfig());
+    expect(result.isError).toBeFalsy();
+
+    const log = fs.readFileSync(auditPath, 'utf8');
+    expect(log).not.toContain('SECRETvalue123');   // not whole-token, so equality redaction would have leaked it
+    expect(log).toContain('[REDACTED]');
+  });
+
+  it('redacts secret values echoed back in stdout (audit log + client result)', async () => {
+    const registry = setupRule(`
+  - id: r1
+    tool: { name: ssh_r1, description: r1 }
+    params:
+      host: { type: string, enum: *hosts }
+      token: { type: string, pattern: "[A-Za-z0-9]+", secret: true }
+    template: { host: "{host}", argv: [echo, "{token}"] }
+`);
+    mockSpawn.mockImplementation(() => fakeProc({
+      stdoutChunks: [Buffer.from('server replied: SUPERSECRET42 (denied)\n')],
+      exitCode: 0,
+    }));
+
+    const result = await executeRuleCall(registry, 'r1', { host: 'localhost', token: 'SUPERSECRET42' }, makeConfig());
+    expect(result.content[0].text).not.toContain('SUPERSECRET42');
+    expect(String(result.structuredContent?.stdout)).not.toContain('SUPERSECRET42');
+
+    const log = fs.readFileSync(auditPath, 'utf8');
+    expect(log).not.toContain('SUPERSECRET42');
+    expect(log).toContain('[REDACTED]');
+  });
+
   it('fails the call when audit append fails (fail-closed)', async () => {
     const registry = setupRule(`
   - id: r1

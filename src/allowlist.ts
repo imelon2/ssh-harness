@@ -53,12 +53,15 @@ export type Allowlist = {
 // Defaults
 // ---------------------------------------------------------------------------
 
-const DEFAULTS: Required<GlobalSettings> = {
+// identityFile is genuinely optional (no default) — kept out of DEFAULTS so the
+// resolved settings type doesn't dishonestly claim it is always a string.
+type ResolvedSettings = Required<Omit<GlobalSettings, 'identityFile'>> & Pick<GlobalSettings, 'identityFile'>;
+
+const DEFAULTS: Required<Omit<GlobalSettings, 'identityFile'>> = {
   timeoutMs: 30000,
   maxStdoutBytes: 262144,
   maxStderrBytes: 65536,
   sshBin: '/usr/bin/ssh',
-  identityFile: undefined as unknown as string,
 };
 
 // ---------------------------------------------------------------------------
@@ -138,7 +141,7 @@ export class Registry {
     return this.allowlist.hosts.sshConfigRoot;
   }
 
-  settings(): Required<GlobalSettings> {
+  settings(): ResolvedSettings {
     return { ...DEFAULTS, ...(this.allowlist.settings ?? {}) };
   }
 
@@ -360,22 +363,26 @@ export function lintAllowlist(
 // ---------------------------------------------------------------------------
 
 export function patternRejectsDashLead(pattern: string): boolean {
-  // Strip leading anchors
+  // Strip caller-supplied anchors, then re-apply the SAME full anchoring the
+  // runtime uses (schema.ts: `^(?:…)$`) so lint and execution agree on what a
+  // pattern admits.
   let stripped = pattern.replace(/^(\^|\\A)/, '');
-  // Strip trailing anchors
   stripped = stripped.replace(/(\$|\\Z)$/, '');
 
   let re: RegExp;
   try {
-    // Re-anchor at start so we test whether the pattern allows a dash-leading match
-    re = new RegExp('^' + stripped);
+    re = new RegExp('^(?:' + stripped + ')$');
   } catch {
     return false;
   }
 
-  // If either '-' or '-' + 32 'a's matches at position 0, pattern allows dash-leading
-  if (re.exec('-') !== null || re.exec('-' + 'a'.repeat(32)) !== null) {
-    return false;
+  // If any dash-leading probe matches the whole value, the pattern admits a
+  // value ssh could mistake for an option flag (e.g. "-oProxyCommand=…").
+  // Cover dash-then-{letter,digit,symbol} so e.g. "-?[0-9]+" (matches "-5")
+  // is rejected, not just dash-then-letter.
+  const dashSeconds = ['', '-', 'a', 'a'.repeat(32), 'o', '1', '0', '9', 'oProxyCommand=x', 'F/tmp/x'];
+  for (const tail of dashSeconds) {
+    if (re.test('-' + tail)) return false;
   }
   return true;
 }

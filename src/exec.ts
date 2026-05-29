@@ -114,26 +114,37 @@ export async function runSsh(host: string, argv: string[], opts: RunSshOptions):
     let timedOut = false;
     let spawnError: Error | undefined;
     let settled = false;
+    let exited = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
       proc.kill('SIGTERM');
-      // Escalate to SIGKILL if the child ignores SIGTERM
-      setTimeout(() => {
-        if (!proc.killed) proc.kill('SIGKILL');
-      }, 2000).unref();
+      // Escalate to SIGKILL if the child has not actually exited yet.
+      // NB: proc.killed only means "a signal was delivered" (true right after
+      // the SIGTERM above), so it cannot gate this — track real exit instead.
+      killTimer = setTimeout(() => {
+        if (!exited) proc.kill('SIGKILL');
+      }, 2000);
+      killTimer.unref();
     }, opts.timeoutMs);
+
+    const clearTimers = () => {
+      clearTimeout(timeoutHandle);
+      if (killTimer) clearTimeout(killTimer);
+    };
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutCollector.push(chunk));
     proc.stderr?.on('data', (chunk: Buffer) => stderrCollector.push(chunk));
 
     proc.on('error', (err) => {
       spawnError = err;
+      exited = true;
       // 'close' will not fire if spawn itself failed (e.g. ENOENT on sshBin) —
       // settle here instead.
       if (!settled) {
         settled = true;
-        clearTimeout(timeoutHandle);
+        clearTimers();
         const durationMs = performance.now() - t0;
         const stdoutResult = stdoutCollector.finalize();
         const stderrResult = stderrCollector.finalize();
@@ -150,9 +161,10 @@ export async function runSsh(host: string, argv: string[], opts: RunSshOptions):
     });
 
     proc.on('close', (code, signal) => {
+      exited = true;
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutHandle);
+      clearTimers();
       const durationMs = performance.now() - t0;
       const stdoutResult = stdoutCollector.finalize();
       const stderrResult = stderrCollector.finalize();

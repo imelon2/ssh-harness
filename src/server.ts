@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { buildRegistry, emptyRegistry, expandWildcardHosts, lintAllowlist, Registry } from './allowlist.js';
@@ -10,10 +11,24 @@ import { runSsh, type ExecResult } from './exec.js';
 import { appendAudit, redactParams, AuditAppendError, type AuditEvent, type AuditOutcome } from './audit.js';
 import { loadHostAliases } from './ssh_config.js';
 import { loadConfig, resolveSshConfigPath, type RuntimeConfig } from './config.js';
-import { buildTools, type Tool } from './tools.js';
+import { buildTools, type Tool, type ToolResult } from './tools.js';
+import type { ParamSpec } from './allowlist.js';
 import { buildBuiltinTools, BUILTIN_TOOL_NAME } from './builtin_tools.js';
 
-const VERSION = '0.1.0';
+// Report the shipped package version in the MCP handshake. Read from
+// package.json (one dir up from this module — src/ in dev, the plugin root
+// alongside bridge/ in the bundle) so it tracks `sh/version.sh` automatically
+// instead of drifting from a hardcoded literal.
+function resolveVersion(): string {
+  try {
+    const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { version?: unknown };
+    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+const VERSION = resolveVersion();
 
 export type CreateServerResult = {
   server: McpServer;
@@ -23,12 +38,54 @@ export type CreateServerResult = {
 };
 
 /**
- * The read-only default allowlist dropped in when none exists yet. Mirrors the
- * SessionStart hook's seed (hook/init-ssh-harness.sh) so a fresh install has
- * working diagnostics without depending on the hook having run. `["*"]` expands
- * to the Host aliases in the resolved ssh_config; commands are read-only.
+ * Safe default seed: NO hosts and NO rule tools. Exposing read-only diagnostics
+ * against every host in the operator's ssh_config without their explicit action
+ * would be an unconsented capability grant, so the default state is empty and
+ * the operator opts hosts/rules in (or sets SSH_HARNESS_SEED_WILDCARD=1 for the
+ * convenience wildcard below). The read-only host-list tool works regardless.
  */
-const DEFAULT_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
+const SAFE_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
+# Schema: docs/allowlist-guide.md, README.md
+#
+# This default is intentionally EMPTY — no SSH rule tools are exposed until you
+# opt hosts and rules in. The read-only host-list tool works regardless.
+#
+# Quick start (enable read-only uptime / df -h / ps auxf for every ssh_config host):
+#   1. set:        allowHosts: &hosts ["*"]
+#   2. uncomment:  the rules block below
+# Or delete this file and re-launch with SSH_HARNESS_SEED_WILDCARD=1 to seed that
+# configuration automatically.
+version: 2
+
+hosts:
+  allowHosts: []        # [] = no hosts. ["*"] = every ssh_config Host alias. Or list aliases explicitly.
+
+settings:
+  timeoutMs: 30000
+  maxStdoutBytes: 262144
+  maxStderrBytes: 65536
+
+rules: []
+# rules:
+#   - id: get_uptime
+#     tool: { name: ssh_harness_get_uptime, description: "uptime (read-only)" }
+#     params: { host: { type: string, enum: *hosts } }
+#     template: { host: "{host}", argv: [uptime] }
+#   - id: get_disk_usage
+#     tool: { name: ssh_harness_get_disk_usage, description: "df -h (read-only)" }
+#     params: { host: { type: string, enum: *hosts } }
+#     template: { host: "{host}", argv: [df, -h] }
+#   - id: get_process_top
+#     tool: { name: ssh_harness_get_process_top, description: "ps auxf (read-only)" }
+#     params: { host: { type: string, enum: *hosts } }
+#     template: { host: "{host}", argv: [ps, auxf] }
+`;
+
+/**
+ * Opt-in convenience seed (SSH_HARNESS_SEED_WILDCARD=1): read-only diagnostics
+ * for every Host alias in the resolved ssh_config. \`["*"]\` expands at startup.
+ */
+const WILDCARD_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
 # Schema: docs/allowlist-guide.md, README.md
 version: 2
 
@@ -86,18 +143,20 @@ rules:
 `;
 
 /**
- * Best-effort: seed the read-only default allowlist if none exists. Never
- * throws — a read-only filesystem or a race just falls through to the loader,
- * which degrades gracefully. Skipped when an explicit path override is given
- * via SSH_HARNESS_ALLOWLIST (tests and operators manage their own file).
+ * Best-effort: seed a default allowlist if none exists. Defaults to the SAFE
+ * (empty) seed; set SSH_HARNESS_SEED_WILDCARD=1 for the all-hosts convenience
+ * seed. Never throws — a read-only filesystem or a race just falls through to
+ * the loader, which degrades gracefully. Skipped when SSH_HARNESS_ALLOWLIST is
+ * set (tests and operators manage their own file).
  */
 function ensureAllowlistSeeded(allowlistPath: string, env: NodeJS.ProcessEnv): void {
   if (env.SSH_HARNESS_ALLOWLIST) return;
+  const wildcard = env.SSH_HARNESS_SEED_WILDCARD === '1';
   try {
     if (fs.existsSync(allowlistPath)) return;
     fs.mkdirSync(path.dirname(allowlistPath), { recursive: true });
-    fs.writeFileSync(allowlistPath, DEFAULT_ALLOWLIST_YAML, { flag: 'wx' });
-    console.error(`[ssh-harness] seeded default allowlist at ${allowlistPath}`);
+    fs.writeFileSync(allowlistPath, wildcard ? WILDCARD_ALLOWLIST_YAML : SAFE_ALLOWLIST_YAML, { flag: 'wx' });
+    console.error(`[ssh-harness] seeded ${wildcard ? 'wildcard' : 'empty (safe)'} default allowlist at ${allowlistPath}`);
   } catch (err) {
     console.error(`[ssh-harness] could not seed default allowlist: ${(err as Error).message}`);
   }
@@ -206,7 +265,12 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): CreateServer
   for (const tool of tools) {
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.paramsSchema.shape },
+      {
+        description: tool.description,
+        inputSchema: tool.paramsSchema.shape,
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
+      },
       async (args) => tool.handler(args),
     );
   }
@@ -223,7 +287,7 @@ export async function executeRuleCall(
   ruleId: string,
   rawArgs: Record<string, unknown>,
   config: RuntimeConfig,
-): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+): Promise<ToolResult> {
   const rule = registry.get(ruleId);
   if (!rule) {
     // Should be impossible if SDK routing is sound; defend anyway.
@@ -236,10 +300,13 @@ export async function executeRuleCall(
   const shape = buildShape(rule.params);
   const parsed = shape.safeParse(rawArgs);
   if (!parsed.success) {
+    // Zod echoes rejected input values; scrub secret param values from both the
+    // audit record and the client-facing message.
+    const safeMsg = redactSecretsInText(parsed.error.message, rule.params, rawArgs);
     const ev = baseEvent(rule.id, rule.tool.name, 'schema_error',
-      redactParams(rawArgs, rule.params), [], '', null, 0, '', '', parsed.error.message);
+      redactParams(rawArgs, rule.params), [], '', null, 0, '', '', safeMsg);
     safeAppend(config, ev);
-    return errorResult(`schema error: ${parsed.error.message}`);
+    return errorResult(`schema error: ${safeMsg}`);
   }
   const args = parsed.data as Record<string, unknown>;
 
@@ -285,6 +352,11 @@ export async function executeRuleCall(
     return errorResult(`exec error: ${(err as Error).message}`);
   }
 
+  // Scrub any secret param values the remote command may have echoed back, so
+  // they reach neither the audit log nor the client response.
+  const safeStdout = redactSecretsInText(result.stdout, rule.params, args);
+  const safeStderr = redactSecretsInText(result.stderr, rule.params, args);
+
   // e. Build audit event
   const outcome: AuditOutcome = result.timedOut ? 'timeout' : (result.exitCode === 0 ? 'ok' : 'exec_error');
   const event: AuditEvent = {
@@ -297,8 +369,8 @@ export async function executeRuleCall(
     host,
     exitCode: result.exitCode,
     durationMs: result.durationMs,
-    stdoutTail: tail(result.stdout, 512),
-    stderrTail: tail(result.stderr, 512),
+    stdoutTail: tail(safeStdout, 512),
+    stderrTail: tail(safeStderr, 512),
   };
 
   // f. Append audit (fail-closed semantics)
@@ -316,20 +388,19 @@ export async function executeRuleCall(
     throw err;
   }
 
-  // g. Return result to MCP client
+  // g. Return result to MCP client (text + structured, conforming to EXEC_OUTPUT_SHAPE)
+  const body = {
+    host,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs,
+    timedOut: result.timedOut,
+    truncated: result.truncated,
+    stdout: safeStdout,
+    stderr: safeStderr,
+  };
   return {
-    content: [{
-      type: 'text',
-      text: JSON.stringify({
-        host,
-        exitCode: result.exitCode,
-        durationMs: result.durationMs,
-        timedOut: result.timedOut,
-        truncated: result.truncated,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      }, null, 2),
-    }],
+    content: [{ type: 'text', text: JSON.stringify(body, null, 2) }],
+    structuredContent: body,
     isError: outcome !== 'ok',
   };
 }
@@ -338,15 +409,30 @@ export async function executeRuleCall(
 function tail(s: string, n: number): string {
   return s.length <= n ? s : s.slice(-n);
 }
-function redactArgv(argv: string[], specs: Record<string, import('./allowlist.js').ParamSpec>, args: Record<string, unknown>): string[] {
-  // Walk argv; replace any token equal to a secret param's value with '[REDACTED]'.
-  const secrets = new Set<string>();
+/** Collect non-empty secret-param values from the resolved args. */
+function secretValues(specs: Record<string, ParamSpec>, args: Record<string, unknown>): string[] {
+  const out: string[] = [];
   for (const [k, spec] of Object.entries(specs)) {
-    if (spec.secret) secrets.add(String(args[k]));
+    if (spec.secret) {
+      const v = String(args[k]);
+      if (v) out.push(v);
+    }
   }
-  return argv.map(a => secrets.has(a) ? '[REDACTED]' : a);
+  return out;
 }
-function errorResult(msg: string) {
+function redactArgv(argv: string[], specs: Record<string, ParamSpec>, args: Record<string, unknown>): string[] {
+  // Replace any secret value, even when embedded in a larger token
+  // (e.g. "--token=SECRET"), not just whole-token matches.
+  const secrets = secretValues(specs, args);
+  if (secrets.length === 0) return argv;
+  return argv.map(a => secrets.reduce((acc, s) => acc.split(s).join('[REDACTED]'), a));
+}
+/** Scrub secret param values out of an arbitrary message (e.g. a Zod error). */
+function redactSecretsInText(text: string, specs: Record<string, ParamSpec>, args: Record<string, unknown>): string {
+  const secrets = secretValues(specs, args);
+  return secrets.reduce((acc, s) => acc.split(s).join('[REDACTED]'), text);
+}
+function errorResult(msg: string): ToolResult {
   return { content: [{ type: 'text' as const, text: msg }], isError: true };
 }
 function baseEvent(

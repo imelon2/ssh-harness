@@ -12,7 +12,11 @@ export function specToZod(spec: ParamSpec): z.ZodTypeAny {
     let str: z.ZodTypeAny = z.string();
 
     if (spec.pattern !== undefined) {
-      str = (str as z.ZodString).regex(new RegExp(spec.pattern));
+      // Fully anchor: Zod's .regex() uses RegExp.test() (substring match), so an
+      // un-anchored pattern like "[a-z0-9]+" would accept any *superstring*
+      // (e.g. "; rm -rf /") — silently defeating the author's whitelist intent.
+      // Anchoring makes the pattern a true whole-value whitelist.
+      str = (str as z.ZodString).regex(new RegExp('^(?:' + spec.pattern + ')$'));
     }
 
     // enum wins over pattern — hard whitelist

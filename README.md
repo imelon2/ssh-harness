@@ -32,11 +32,13 @@ SSH Harness is a Claude Code plugin. Install it from inside any project's Claude
 ```
 
 
-Restart Claude Code after installing. On the next session the bundled `SessionStart` hook seeds `.ssh_harness/allowlist.yaml` into the current project (never overwriting an existing one), and the MCP server comes up with its tools exposed as `mcp__ssh-harness__ssh_harness_*`.
+Restart Claude Code after installing. The MCP server comes up with the always-on `mcp__ssh-harness__ssh_harness_get_allow_host_lists` tool, and auto-seeds `.ssh_harness/allowlist.yaml` if absent (the `SessionStart` hook does the same, as a fallback — neither overwrites an existing file).
 
-**Requirements:** Node 24+ on `PATH` (the server runs via `node`). The compiled `bridge/` is committed, so no `npm install` or build step is needed to install.
+The default seed is intentionally **empty** — no hosts, no rule tools — so the LLM gains no host access until you opt in. To enable the standard read-only diagnostics (`uptime` / `df -h` / `ps auxf`) for every host in your ssh_config, either edit the seeded `allowlist.yaml` (set `allowHosts: &hosts ["*"]` and uncomment the example rules), or delete the file and relaunch with `SSH_HARNESS_SEED_WILDCARD=1` to seed that configuration automatically.
 
-Then define your hosts and diagnostics in the seeded `.ssh_harness/allowlist.yaml` (see [Adding a new rule](#adding-a-new-rule), [Swapping `localhost` for a real host](#swapping-localhost-for-a-real-host), and [docs/allowlist-guide.md](docs/allowlist-guide.md)).
+**Requirements:** Node 24+ on `PATH` (the server runs via `node`). The compiled `bridge/` is committed, so no `npm install` or build step is needed to install. A missing or invalid allowlist never blocks startup — the server logs the problem and comes up with the builtin tool only.
+
+Then define your hosts and diagnostics in `.ssh_harness/allowlist.yaml` (see [Adding a new rule](#adding-a-new-rule), [Swapping `localhost` for a real host](#swapping-localhost-for-a-real-host), and [docs/allowlist-guide.md](docs/allowlist-guide.md)).
 
 ## Directory layout
 
@@ -107,7 +109,7 @@ npx @modelcontextprotocol/inspector@latest node bridge/server.js
 5-step checklist:
 
 1. Inspector UI opens in the browser; the `ssh-harness` server appears as **connected**.
-2. Tools tab lists the rules in your allowlist (3 in the seed: `ssh_harness_get_uptime`, `ssh_harness_get_disk_usage`, `ssh_harness_get_process_top`) **plus** the always-on built-in `ssh_harness_get_allow_host_lists`.
+2. Tools tab lists the rules in your allowlist **plus** the always-on built-in `ssh_harness_get_allow_host_lists`. With the empty default seed only the built-in appears; with `SSH_HARNESS_SEED_WILDCARD=1` (or after you add rules) you also get `ssh_harness_get_uptime`, `ssh_harness_get_disk_usage`, `ssh_harness_get_process_top`. Rule tools carry read-only MCP annotations and a structured output schema.
 3. Click `ssh_harness_get_uptime`, fill `host: localhost`, click **Call Tool**.
 4. If your machine has ssh-to-localhost configured, you should see uptime output. If not, you'll see an MCP error referencing the ssh exit code or connection refusal — that proves the pipeline reached `spawnSync` cleanly.
 5. Open `.ssh_harness/audit.log`. Each invocation has a JSON-line entry with `outcome`, `ruleId`, `params`, `argv`, `durationMs`, `stdoutTail`.

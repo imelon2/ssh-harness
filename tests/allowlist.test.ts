@@ -281,6 +281,9 @@ rules:
     expect(patternRejectsDashLead('^.+$')).toBe(false);
     expect(patternRejectsDashLead('^-?[a-z]+$')).toBe(false);
     expect(patternRejectsDashLead('^[a-z-]+$')).toBe(false);
+    // dash-then-digit must also be rejected (regression: probe set used to miss this)
+    expect(patternRejectsDashLead('^-?[0-9]+$')).toBe(false);
+    expect(patternRejectsDashLead('[0-9]+')).toBe(true);
   });
 
   // -------------------------------------------------------------------------

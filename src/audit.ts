@@ -44,6 +44,28 @@ export class AuditAppendError extends Error {
 // appendAudit
 // ---------------------------------------------------------------------------
 
+// Rotate the audit log once it crosses this size, keeping a single `.1` backup,
+// so a long-lived session can't grow it unbounded (and ironically trip the
+// fail-closed path when the disk fills). Override with SSH_HARNESS_AUDIT_MAX_BYTES.
+const DEFAULT_MAX_AUDIT_BYTES = 5 * 1024 * 1024;
+
+function maxAuditBytes(): number {
+  const v = Number(process.env.SSH_HARNESS_AUDIT_MAX_BYTES);
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_AUDIT_BYTES;
+}
+
+/** Best-effort: if the log exceeds the cap, rename it to `${path}.1` (replacing
+ * any prior backup) so the next append starts a fresh file. Never throws. */
+function rotateIfOversized(path: string): void {
+  try {
+    if (fs.statSync(path).size >= maxAuditBytes()) {
+      fs.renameSync(path, path + '.1');
+    }
+  } catch {
+    // No file yet, or rotation failed — non-fatal; append proceeds regardless.
+  }
+}
+
 export function appendAudit(
   path: string,
   event: AuditEvent,
@@ -51,6 +73,7 @@ export function appendAudit(
 ): void {
   // Ensure parent directory exists with mode 0o700
   fs.mkdirSync(nodePath.dirname(path), { recursive: true, mode: 0o700 });
+  rotateIfOversized(path);
 
   const line = JSON.stringify(event) + '\n';
 
