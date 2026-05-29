@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { buildRegistry, expandWildcardHosts, lintAllowlist, Registry } from './allowlist.js';
+import { buildRegistry, emptyRegistry, expandWildcardHosts, lintAllowlist, Registry } from './allowlist.js';
 import { buildShape } from './schema.js';
 import { renderArgv } from './template.js';
 import { runSsh, type ExecResult } from './exec.js';
@@ -21,87 +23,171 @@ export type CreateServerResult = {
 };
 
 /**
+ * The read-only default allowlist dropped in when none exists yet. Mirrors the
+ * SessionStart hook's seed (hook/init-ssh-harness.sh) so a fresh install has
+ * working diagnostics without depending on the hook having run. `["*"]` expands
+ * to the Host aliases in the resolved ssh_config; commands are read-only.
+ */
+const DEFAULT_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
+# Schema: docs/allowlist-guide.md, README.md
+version: 2
+
+hosts:
+  allowHosts: &hosts ["*"]                     # ["*"] -> expand to every Host alias in ssh_config (excluding \`Host *\` wildcard).
+
+settings:
+  timeoutMs: 30000
+  maxStdoutBytes: 262144
+  maxStderrBytes: 65536
+
+rules:
+  - id: get_uptime
+    tool:
+      name: ssh_harness_get_uptime
+      description: |
+        Return how long the host has been up and the current load averages (runs \`uptime\`).
+        Read-only, no arguments. One-shot snapshot.
+    params:
+      host:
+        type: string
+        enum: *hosts
+        description: Target host alias from the ssh_config above
+    template:
+      host: "{host}"
+      argv: [uptime]
+
+  - id: get_disk_usage
+    tool:
+      name: ssh_harness_get_disk_usage
+      description: |
+        Show filesystem disk usage in human-readable form (runs \`df -h\`).
+        Read-only, no arguments. One-shot snapshot.
+    params:
+      host:
+        type: string
+        enum: *hosts
+    template:
+      host: "{host}"
+      argv: [df, -h]
+
+  - id: get_process_top
+    tool:
+      name: ssh_harness_get_process_top
+      description: |
+        Snapshot all running processes with CPU/memory usage in forest form (runs \`ps auxf\`).
+        Read-only, no arguments. One-shot snapshot.
+    params:
+      host:
+        type: string
+        enum: *hosts
+    template:
+      host: "{host}"
+      argv: [ps, auxf]
+`;
+
+/**
+ * Best-effort: seed the read-only default allowlist if none exists. Never
+ * throws — a read-only filesystem or a race just falls through to the loader,
+ * which degrades gracefully. Skipped when an explicit path override is given
+ * via SSH_HARNESS_ALLOWLIST (tests and operators manage their own file).
+ */
+function ensureAllowlistSeeded(allowlistPath: string, env: NodeJS.ProcessEnv): void {
+  if (env.SSH_HARNESS_ALLOWLIST) return;
+  try {
+    if (fs.existsSync(allowlistPath)) return;
+    fs.mkdirSync(path.dirname(allowlistPath), { recursive: true });
+    fs.writeFileSync(allowlistPath, DEFAULT_ALLOWLIST_YAML, { flag: 'wx' });
+    console.error(`[ssh-harness] seeded default allowlist at ${allowlistPath}`);
+  } catch (err) {
+    console.error(`[ssh-harness] could not seed default allowlist: ${(err as Error).message}`);
+  }
+}
+
+/**
  * Build (but do not connect) the MCP server. Used by both the CLI entrypoint
- * and the integration tests. Exits the process on fatal startup errors
- * (lint failures, parse failures, host-alias drift under strictLint).
+ * and the integration tests.
+ *
+ * Startup is fail-OPEN for the protocol but fail-CLOSED for tool exposure: a
+ * missing or invalid allowlist NEVER calls process.exit() (exiting before the
+ * transport connects surfaces to the client as an opaque -32000). Instead the
+ * server starts with ZERO rule tools — the read-only builtin tool stays
+ * available, the handshake succeeds, and the configuration error is logged.
  *
  * For test injection, accept an optional env so tests can override paths.
  */
 export function createServer(env: NodeJS.ProcessEnv = process.env): CreateServerResult {
   const baseConfig = loadConfig(env);
+  ensureAllowlistSeeded(baseConfig.allowlistPath, env);
 
-  // 1. Load allowlist (exit 2 on parse failure)
-  let registry: Registry;
+  // Load + validate the allowlist. Any failure degrades to an empty registry
+  // (no rule tools) rather than killing the process before the handshake.
+  let registry: Registry = emptyRegistry();
+  let config: RuntimeConfig = { ...baseConfig };
   try {
     registry = buildRegistry(baseConfig.allowlistPath);
-  } catch (err) {
-    console.error(`[ssh-harness] failed to load allowlist: ${(err as Error).message}`);
-    process.exit(2);
-  }
 
-  // 1b. Resolve sshConfigPath: env > allowlist hosts.sshConfigRoot > ~/.ssh/config
-  const config: RuntimeConfig = {
-    ...baseConfig,
-    sshConfigPath: resolveSshConfigPath(
-      baseConfig.sshConfigEnvOverride,
-      baseConfig.allowlistPath,
-      registry.sshConfigRoot(),
-    ),
-  };
+    // Resolve sshConfigPath: env > allowlist hosts.sshConfigRoot > ~/.ssh/config
+    config = {
+      ...baseConfig,
+      sshConfigPath: resolveSshConfigPath(
+        baseConfig.sshConfigEnvOverride,
+        baseConfig.allowlistPath,
+        registry.sshConfigRoot(),
+      ),
+    };
 
-  // 2. Lint (exit 3 if errors present)
-  const lintResults = lintAllowlist(registry.raw(), { strict: config.strictLint, maxRules: config.maxRules });
-  const errors = lintResults.filter(l => l.startsWith('[ERROR]'));
-  const warnings = lintResults.filter(l => l.startsWith('[WARN]'));
-  if (errors.length > 0) {
-    console.error('[ssh-harness] allowlist lint errors:');
-    for (const e of errors) console.error('  ' + e);
-    process.exit(3);
-  }
-  for (const w of warnings) console.error('[ssh-harness] ' + w);
-
-  // 3. ssh_config Host cross-check
-  let aliases: Set<string>;
-  try {
-    aliases = loadHostAliases(config.sshConfigPath);
-  } catch (err) {
-    console.error(`[ssh-harness] could not read ssh_config at ${config.sshConfigPath}: ${(err as Error).message}`);
-    if (config.strictLint) process.exit(3);
-    aliases = new Set();
-  }
-
-  // 3a. Expand allowHosts: ["*"] to the concrete ssh_config Host aliases.
-  // Must run before the drift check so the wildcard makes drift a no-op.
-  try {
-    expandWildcardHosts(registry.raw(), aliases);
-  } catch (err) {
-    console.error(`[ssh-harness] wildcard expansion failed: ${(err as Error).message}`);
-    process.exit(3);
-  }
-
-  const driftedHosts = registry.hosts().filter(h => !aliases.has(h.toLowerCase()));
-  if (driftedHosts.length > 0) {
-    const msg = `[WARN] hosts in allowlist not declared in ssh_config: ${driftedHosts.join(', ')}`;
-    console.error('[ssh-harness] ' + msg);
-    if (config.strictLint) {
-      console.error('[ssh-harness] strict_lint=on, exiting');
-      process.exit(3);
+    // Lint (throw on errors; warnings are logged and tolerated)
+    const lintResults = lintAllowlist(registry.raw(), { strict: config.strictLint, maxRules: config.maxRules });
+    const errors = lintResults.filter(l => l.startsWith('[ERROR]'));
+    const warnings = lintResults.filter(l => l.startsWith('[WARN]'));
+    for (const w of warnings) console.error('[ssh-harness] ' + w);
+    if (errors.length > 0) {
+      throw new Error('allowlist lint errors:\n  ' + errors.join('\n  '));
     }
+
+    // ssh_config Host cross-check
+    let aliases: Set<string>;
+    try {
+      aliases = loadHostAliases(config.sshConfigPath);
+    } catch (err) {
+      if (config.strictLint) {
+        throw new Error(`could not read ssh_config at ${config.sshConfigPath}: ${(err as Error).message}`);
+      }
+      console.error(`[ssh-harness] could not read ssh_config at ${config.sshConfigPath}: ${(err as Error).message}`);
+      aliases = new Set();
+    }
+
+    // Expand allowHosts: ["*"] to the concrete ssh_config Host aliases.
+    // Must run before the drift check so the wildcard makes drift a no-op.
+    expandWildcardHosts(registry.raw(), aliases);
+
+    const driftedHosts = registry.hosts().filter(h => !aliases.has(h.toLowerCase()));
+    if (driftedHosts.length > 0) {
+      const msg = `hosts in allowlist not declared in ssh_config: ${driftedHosts.join(', ')}`;
+      if (config.strictLint) {
+        throw new Error(msg + ' (strict_lint=on)');
+      }
+      console.error(`[ssh-harness] [WARN] ${msg}`);
+    }
+
+    // Reject collisions between rule-derived tool names and the built-in tool name
+    const collidingRule = registry.list().find((r) => r.tool.name === BUILTIN_TOOL_NAME);
+    if (collidingRule !== undefined) {
+      throw new Error(`allowlist rule "${collidingRule.id}" uses reserved built-in tool name "${BUILTIN_TOOL_NAME}"`);
+    }
+  } catch (err) {
+    console.error(`[ssh-harness] allowlist disabled — starting with no rule tools: ${(err as Error).message}`);
+    console.error('[ssh-harness] fix .ssh_harness/allowlist.yaml and reload to enable rule tools.');
+    registry = emptyRegistry();
+    config = { ...baseConfig };
   }
 
-  // 4. Reject collisions between rule-derived tool names and built-in tool names
-  const collidingRule = registry.list().find((r) => r.tool.name === BUILTIN_TOOL_NAME);
-  if (collidingRule !== undefined) {
-    console.error(`[ssh-harness] allowlist rule "${collidingRule.id}" uses reserved built-in tool name "${BUILTIN_TOOL_NAME}"`);
-    process.exit(3);
-  }
-
-  // 5. Build tool catalog (rule-derived + built-in)
-  const ruleTools = buildTools(registry, config);
+  // Build tool catalog (rule-derived + built-in). Builtin tool is always present.
+  const ruleTools = registry.count() > 0 ? buildTools(registry, config) : [];
   const builtinTools = buildBuiltinTools(registry, config);
   const tools = [...ruleTools, ...builtinTools];
 
-  // 6. Startup banner (one block, all to stderr so stdout stays clean for MCP transport)
+  // Startup banner (all to stderr so stdout stays clean for MCP transport)
   console.error(`[ssh-harness] cwd=${process.cwd()}`);
   console.error(`[ssh-harness] allowlist=${config.allowlistPath}`);
   console.error(`[ssh-harness] ssh_config=${config.sshConfigPath}`);
@@ -111,7 +197,7 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): CreateServer
   console.error(`[ssh-harness] rules=${registry.count()} (cap=${config.maxRules})`);
   console.error(`[ssh-harness] builtin_tools=${builtinTools.length}`);
 
-  // 7. Register everything with the MCP server
+  // Register everything with the MCP server
   const server = new McpServer(
     { name: 'ssh-harness', version: VERSION },
     { capabilities: { tools: {} } },

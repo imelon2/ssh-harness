@@ -3232,8 +3232,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path2) {
-      let input = path2;
+    function removeDotSegments(path3) {
+      let input = path3;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3485,8 +3485,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path2, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
+        const [path3, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path3 && path3 !== "/" ? path3 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6879,12 +6879,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs4, exportName) {
+    function addFormats(ajv, list, fs5, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs4[f]);
+        ajv.addFormat(f, fs5[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -6969,17 +6969,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path2) {
-      const ctrl = callVisitor(key, node, visitor, path2);
+    function visit_(key, node, visitor, path3) {
+      const ctrl = callVisitor(key, node, visitor, path3);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path2, ctrl);
-        return visit_(key, ctrl, visitor, path2);
+        replaceNode(key, path3, ctrl);
+        return visit_(key, ctrl, visitor, path3);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path2 = Object.freeze(path2.concat(node));
+          path3 = Object.freeze(path3.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path2);
+            const ci = visit_(i, node.items[i], visitor, path3);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -6990,13 +6990,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path2 = Object.freeze(path2.concat(node));
-          const ck = visit_("key", node.key, visitor, path2);
+          path3 = Object.freeze(path3.concat(node));
+          const ck = visit_("key", node.key, visitor, path3);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path2);
+          const cv = visit_("value", node.value, visitor, path3);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7017,17 +7017,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path2) {
-      const ctrl = await callVisitor(key, node, visitor, path2);
+    async function visitAsync_(key, node, visitor, path3) {
+      const ctrl = await callVisitor(key, node, visitor, path3);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path2, ctrl);
-        return visitAsync_(key, ctrl, visitor, path2);
+        replaceNode(key, path3, ctrl);
+        return visitAsync_(key, ctrl, visitor, path3);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path2 = Object.freeze(path2.concat(node));
+          path3 = Object.freeze(path3.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path2);
+            const ci = await visitAsync_(i, node.items[i], visitor, path3);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -7038,13 +7038,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path2 = Object.freeze(path2.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path2);
+          path3 = Object.freeze(path3.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path3);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path2);
+          const cv = await visitAsync_("value", node.value, visitor, path3);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -7071,23 +7071,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path2) {
+    function callVisitor(key, node, visitor, path3) {
       if (typeof visitor === "function")
-        return visitor(key, node, path2);
+        return visitor(key, node, path3);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path2);
+        return visitor.Map?.(key, node, path3);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path2);
+        return visitor.Seq?.(key, node, path3);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path2);
+        return visitor.Pair?.(key, node, path3);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path2);
+        return visitor.Scalar?.(key, node, path3);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path2);
+        return visitor.Alias?.(key, node, path3);
       return void 0;
     }
-    function replaceNode(key, path2, node) {
-      const parent = path2[path2.length - 1];
+    function replaceNode(key, path3, node) {
+      const parent = path3[path3.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -7697,10 +7697,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path2, value) {
+    function collectionFromPath(schema, path3, value) {
       let v = value;
-      for (let i = path2.length - 1; i >= 0; --i) {
-        const k = path2[i];
+      for (let i = path3.length - 1; i >= 0; --i) {
+        const k = path3[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -7719,7 +7719,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path2) => path2 == null || typeof path2 === "object" && !!path2[Symbol.iterator]().next().done;
+    var isEmptyPath = (path3) => path3 == null || typeof path3 === "object" && !!path3[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -7749,11 +7749,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path2, value) {
-        if (isEmptyPath(path2))
+      addIn(path3, value) {
+        if (isEmptyPath(path3))
           this.add(value);
         else {
-          const [key, ...rest] = path2;
+          const [key, ...rest] = path3;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -7767,8 +7767,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path2) {
-        const [key, ...rest] = path2;
+      deleteIn(path3) {
+        const [key, ...rest] = path3;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -7782,8 +7782,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path2, keepScalar) {
-        const [key, ...rest] = path2;
+      getIn(path3, keepScalar) {
+        const [key, ...rest] = path3;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -7801,8 +7801,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path2) {
-        const [key, ...rest] = path2;
+      hasIn(path3) {
+        const [key, ...rest] = path3;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -7812,8 +7812,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path2, value) {
-        const [key, ...rest] = path2;
+      setIn(path3, value) {
+        const [key, ...rest] = path3;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -10328,9 +10328,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path2, value) {
+      addIn(path3, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path2, value);
+          this.contents.addIn(path3, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -10405,14 +10405,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path2) {
-        if (Collection.isEmptyPath(path2)) {
+      deleteIn(path3) {
+        if (Collection.isEmptyPath(path3)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path2) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path3) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -10427,10 +10427,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path2, keepScalar) {
-        if (Collection.isEmptyPath(path2))
+      getIn(path3, keepScalar) {
+        if (Collection.isEmptyPath(path3))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path2, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path3, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -10441,10 +10441,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path2) {
-        if (Collection.isEmptyPath(path2))
+      hasIn(path3) {
+        if (Collection.isEmptyPath(path3))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path2) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path3) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -10461,13 +10461,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path2, value) {
-        if (Collection.isEmptyPath(path2)) {
+      setIn(path3, value) {
+        if (Collection.isEmptyPath(path3)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path2), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path3), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path2, value);
+          this.contents.setIn(path3, value);
         }
       }
       /**
@@ -12427,9 +12427,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path2) => {
+    visit.itemAtPath = (cst, path3) => {
       let item = cst;
-      for (const [field, index] of path2) {
+      for (const [field, index] of path3) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -12438,23 +12438,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path2) => {
-      const parent = visit.itemAtPath(cst, path2.slice(0, -1));
-      const field = path2[path2.length - 1][0];
+    visit.parentCollection = (cst, path3) => {
+      const parent = visit.itemAtPath(cst, path3.slice(0, -1));
+      const field = path3[path3.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path2, item, visitor) {
-      let ctrl = visitor(item, path2);
+    function _visit(path3, item, visitor) {
+      let ctrl = visitor(item, path3);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path2.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path3.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -12465,10 +12465,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path2);
+            ctrl = ctrl(item, path3);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path2) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path3) : ctrl;
     }
     exports.visit = visit;
   }
@@ -13770,14 +13770,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs4 = this.flowScalar(this.type);
+              const fs5 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map.items.push({ start, key: fs4, sep: [] });
+                map.items.push({ start, key: fs5, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs4);
+                this.stack.push(fs5);
               } else {
-                Object.assign(it, { key: fs4, sep: [] });
+                Object.assign(it, { key: fs5, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -13905,13 +13905,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs4 = this.flowScalar(this.type);
+              const fs5 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs4, sep: [] });
+                fc.items.push({ start: [], key: fs5, sep: [] });
               else if (it.sep)
-                this.stack.push(fs4);
+                this.stack.push(fs5);
               else
-                Object.assign(it, { key: fs4, sep: [] });
+                Object.assign(it, { key: fs5, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -14218,6 +14218,10 @@ var require_dist2 = __commonJS({
     exports.visitAsync = visit.visitAsync;
   }
 });
+
+// src/server.ts
+import * as fs4 from "node:fs";
+import * as path2 from "node:path";
 
 // node_modules/zod/v3/external.js
 var external_exports = {};
@@ -14697,8 +14701,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path2, errorMaps, issueData } = params;
-  const fullPath = [...path2, ...issueData.path || []];
+  const { data, path: path3, errorMaps, issueData } = params;
+  const fullPath = [...path3, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -14814,11 +14818,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path2, key) {
+  constructor(parent, value, path3, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path2;
+    this._path = path3;
     this._key = key;
   }
   get path() {
@@ -18455,10 +18459,10 @@ function assignProp(target, prop, value) {
     configurable: true
   });
 }
-function getElementAtPath(obj, path2) {
-  if (!path2)
+function getElementAtPath(obj, path3) {
+  if (!path3)
     return obj;
-  return path2.reduce((acc, key) => acc?.[key], obj);
+  return path3.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -18778,11 +18782,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path2, issues) {
+function prefixIssues(path3, issues) {
   return issues.map((iss) => {
     var _a;
     (_a = iss).path ?? (_a.path = []);
-    iss.path.unshift(path2);
+    iss.path.unshift(path3);
     return iss;
   });
 }
@@ -28508,17 +28512,20 @@ var Registry = class {
     return this.allowlist;
   }
 };
-function loadAllowlist(path2) {
-  const text = fs.readFileSync(path2, "utf8");
+function loadAllowlist(path3) {
+  const text = fs.readFileSync(path3, "utf8");
   const parsed = (0, import_yaml.parse)(text);
   const result = AllowlistSchema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(`Invalid allowlist at ${path2}: ${result.error.message}`);
+    throw new Error(`Invalid allowlist at ${path3}: ${result.error.message}`);
   }
   return result.data;
 }
-function buildRegistry(path2) {
-  return new Registry(loadAllowlist(path2));
+function buildRegistry(path3) {
+  return new Registry(loadAllowlist(path3));
+}
+function emptyRegistry() {
+  return new Registry({ version: 2, hosts: { allowHosts: [] }, rules: [] });
 }
 function expandWildcardHosts(allowlist, aliases) {
   const isWildcardOnly = (arr) => Array.isArray(arr) && arr.length === 1 && arr[0] === "*";
@@ -28872,11 +28879,11 @@ var AuditAppendError = class extends Error {
   }
   cause;
 };
-function appendAudit(path2, event, opts) {
-  fs2.mkdirSync(nodePath.dirname(path2), { recursive: true, mode: 448 });
+function appendAudit(path3, event, opts) {
+  fs2.mkdirSync(nodePath.dirname(path3), { recursive: true, mode: 448 });
   const line = JSON.stringify(event) + "\n";
   try {
-    fs2.appendFileSync(path2, line, { encoding: "utf8", mode: 384 });
+    fs2.appendFileSync(path3, line, { encoding: "utf8", mode: 384 });
   } catch (err) {
     if (opts.bestEffort === true) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -28926,12 +28933,13 @@ import os from "node:os";
 var HARNESS_DIR = ".ssh_harness";
 var DEFAULT_SSH_CONFIG = path.join(os.homedir(), ".ssh", "config");
 function loadConfig(env = process.env) {
-  const cwdJoin = (...p) => path.resolve(process.cwd(), HARNESS_DIR, ...p);
+  const baseDir = env.CLAUDE_PROJECT_DIR && env.CLAUDE_PROJECT_DIR !== "" ? env.CLAUDE_PROJECT_DIR : process.cwd();
+  const harnessJoin = (...p) => path.resolve(baseDir, HARNESS_DIR, ...p);
   const parsedMaxRules = Number(env.SSH_HARNESS_MAX_RULES ?? 40);
   const envOverride = env.SSH_HARNESS_CONFIG;
   return {
-    allowlistPath: env.SSH_HARNESS_ALLOWLIST ?? cwdJoin("allowlist.yaml"),
-    auditPath: env.SSH_HARNESS_AUDIT ?? cwdJoin("audit.log"),
+    allowlistPath: env.SSH_HARNESS_ALLOWLIST ?? harnessJoin("allowlist.yaml"),
+    auditPath: env.SSH_HARNESS_AUDIT ?? harnessJoin("audit.log"),
     // Seed with env override if present, else the global default. createServer
     // can overwrite this with the allowlist's hosts.sshConfigRoot when applicable.
     sshConfigPath: envOverride !== void 0 && envOverride !== "" ? envOverride : DEFAULT_SSH_CONFIG,
@@ -29156,61 +29164,125 @@ function redactUnknown(v) {
 
 // src/server.ts
 var VERSION = "0.1.0";
+var DEFAULT_ALLOWLIST_YAML = `# Local allowlist. Edits gated by CODEOWNERS.
+# Schema: docs/allowlist-guide.md, README.md
+version: 2
+
+hosts:
+  allowHosts: &hosts ["*"]                     # ["*"] -> expand to every Host alias in ssh_config (excluding \`Host *\` wildcard).
+
+settings:
+  timeoutMs: 30000
+  maxStdoutBytes: 262144
+  maxStderrBytes: 65536
+
+rules:
+  - id: get_uptime
+    tool:
+      name: ssh_harness_get_uptime
+      description: |
+        Return how long the host has been up and the current load averages (runs \`uptime\`).
+        Read-only, no arguments. One-shot snapshot.
+    params:
+      host:
+        type: string
+        enum: *hosts
+        description: Target host alias from the ssh_config above
+    template:
+      host: "{host}"
+      argv: [uptime]
+
+  - id: get_disk_usage
+    tool:
+      name: ssh_harness_get_disk_usage
+      description: |
+        Show filesystem disk usage in human-readable form (runs \`df -h\`).
+        Read-only, no arguments. One-shot snapshot.
+    params:
+      host:
+        type: string
+        enum: *hosts
+    template:
+      host: "{host}"
+      argv: [df, -h]
+
+  - id: get_process_top
+    tool:
+      name: ssh_harness_get_process_top
+      description: |
+        Snapshot all running processes with CPU/memory usage in forest form (runs \`ps auxf\`).
+        Read-only, no arguments. One-shot snapshot.
+    params:
+      host:
+        type: string
+        enum: *hosts
+    template:
+      host: "{host}"
+      argv: [ps, auxf]
+`;
+function ensureAllowlistSeeded(allowlistPath, env) {
+  if (env.SSH_HARNESS_ALLOWLIST) return;
+  try {
+    if (fs4.existsSync(allowlistPath)) return;
+    fs4.mkdirSync(path2.dirname(allowlistPath), { recursive: true });
+    fs4.writeFileSync(allowlistPath, DEFAULT_ALLOWLIST_YAML, { flag: "wx" });
+    console.error(`[ssh-harness] seeded default allowlist at ${allowlistPath}`);
+  } catch (err) {
+    console.error(`[ssh-harness] could not seed default allowlist: ${err.message}`);
+  }
+}
 function createServer(env = process.env) {
   const baseConfig = loadConfig(env);
-  let registry2;
+  ensureAllowlistSeeded(baseConfig.allowlistPath, env);
+  let registry2 = emptyRegistry();
+  let config2 = { ...baseConfig };
   try {
     registry2 = buildRegistry(baseConfig.allowlistPath);
-  } catch (err) {
-    console.error(`[ssh-harness] failed to load allowlist: ${err.message}`);
-    process.exit(2);
-  }
-  const config2 = {
-    ...baseConfig,
-    sshConfigPath: resolveSshConfigPath(
-      baseConfig.sshConfigEnvOverride,
-      baseConfig.allowlistPath,
-      registry2.sshConfigRoot()
-    )
-  };
-  const lintResults = lintAllowlist(registry2.raw(), { strict: config2.strictLint, maxRules: config2.maxRules });
-  const errors = lintResults.filter((l) => l.startsWith("[ERROR]"));
-  const warnings = lintResults.filter((l) => l.startsWith("[WARN]"));
-  if (errors.length > 0) {
-    console.error("[ssh-harness] allowlist lint errors:");
-    for (const e of errors) console.error("  " + e);
-    process.exit(3);
-  }
-  for (const w of warnings) console.error("[ssh-harness] " + w);
-  let aliases;
-  try {
-    aliases = loadHostAliases(config2.sshConfigPath);
-  } catch (err) {
-    console.error(`[ssh-harness] could not read ssh_config at ${config2.sshConfigPath}: ${err.message}`);
-    if (config2.strictLint) process.exit(3);
-    aliases = /* @__PURE__ */ new Set();
-  }
-  try {
-    expandWildcardHosts(registry2.raw(), aliases);
-  } catch (err) {
-    console.error(`[ssh-harness] wildcard expansion failed: ${err.message}`);
-    process.exit(3);
-  }
-  const driftedHosts = registry2.hosts().filter((h) => !aliases.has(h.toLowerCase()));
-  if (driftedHosts.length > 0) {
-    const msg = `[WARN] hosts in allowlist not declared in ssh_config: ${driftedHosts.join(", ")}`;
-    console.error("[ssh-harness] " + msg);
-    if (config2.strictLint) {
-      console.error("[ssh-harness] strict_lint=on, exiting");
-      process.exit(3);
+    config2 = {
+      ...baseConfig,
+      sshConfigPath: resolveSshConfigPath(
+        baseConfig.sshConfigEnvOverride,
+        baseConfig.allowlistPath,
+        registry2.sshConfigRoot()
+      )
+    };
+    const lintResults = lintAllowlist(registry2.raw(), { strict: config2.strictLint, maxRules: config2.maxRules });
+    const errors = lintResults.filter((l) => l.startsWith("[ERROR]"));
+    const warnings = lintResults.filter((l) => l.startsWith("[WARN]"));
+    for (const w of warnings) console.error("[ssh-harness] " + w);
+    if (errors.length > 0) {
+      throw new Error("allowlist lint errors:\n  " + errors.join("\n  "));
     }
+    let aliases;
+    try {
+      aliases = loadHostAliases(config2.sshConfigPath);
+    } catch (err) {
+      if (config2.strictLint) {
+        throw new Error(`could not read ssh_config at ${config2.sshConfigPath}: ${err.message}`);
+      }
+      console.error(`[ssh-harness] could not read ssh_config at ${config2.sshConfigPath}: ${err.message}`);
+      aliases = /* @__PURE__ */ new Set();
+    }
+    expandWildcardHosts(registry2.raw(), aliases);
+    const driftedHosts = registry2.hosts().filter((h) => !aliases.has(h.toLowerCase()));
+    if (driftedHosts.length > 0) {
+      const msg = `hosts in allowlist not declared in ssh_config: ${driftedHosts.join(", ")}`;
+      if (config2.strictLint) {
+        throw new Error(msg + " (strict_lint=on)");
+      }
+      console.error(`[ssh-harness] [WARN] ${msg}`);
+    }
+    const collidingRule = registry2.list().find((r) => r.tool.name === BUILTIN_TOOL_NAME);
+    if (collidingRule !== void 0) {
+      throw new Error(`allowlist rule "${collidingRule.id}" uses reserved built-in tool name "${BUILTIN_TOOL_NAME}"`);
+    }
+  } catch (err) {
+    console.error(`[ssh-harness] allowlist disabled \u2014 starting with no rule tools: ${err.message}`);
+    console.error("[ssh-harness] fix .ssh_harness/allowlist.yaml and reload to enable rule tools.");
+    registry2 = emptyRegistry();
+    config2 = { ...baseConfig };
   }
-  const collidingRule = registry2.list().find((r) => r.tool.name === BUILTIN_TOOL_NAME);
-  if (collidingRule !== void 0) {
-    console.error(`[ssh-harness] allowlist rule "${collidingRule.id}" uses reserved built-in tool name "${BUILTIN_TOOL_NAME}"`);
-    process.exit(3);
-  }
-  const ruleTools = buildTools(registry2, config2);
+  const ruleTools = registry2.count() > 0 ? buildTools(registry2, config2) : [];
   const builtinTools = buildBuiltinTools(registry2, config2);
   const tools = [...ruleTools, ...builtinTools];
   console.error(`[ssh-harness] cwd=${process.cwd()}`);

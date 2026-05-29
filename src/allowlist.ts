@@ -165,6 +165,15 @@ export function buildRegistry(path: string): Registry {
   return new Registry(loadAllowlist(path));
 }
 
+/**
+ * A zero-rule, zero-host registry. Used as the fail-closed fallback when the
+ * allowlist is missing or invalid: the server exposes no rule tools but still
+ * connects to the MCP transport (the read-only builtin tool keeps working).
+ */
+export function emptyRegistry(): Registry {
+  return new Registry({ version: 2, hosts: { allowHosts: [] }, rules: [] });
+}
+
 // ---------------------------------------------------------------------------
 // Wildcard expansion
 // ---------------------------------------------------------------------------

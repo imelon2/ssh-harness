@@ -24,12 +24,19 @@ export type RuntimeConfig = {
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
-  const cwdJoin = (...p: string[]) => path.resolve(process.cwd(), HARNESS_DIR, ...p);
+  // Resolve the harness dir against CLAUDE_PROJECT_DIR when Claude Code provides
+  // it, so the server and the SessionStart seed hook agree on one location.
+  // Fall back to cwd (which, for a Claude-Code-launched MCP server, is the
+  // project dir anyway) when it is unset.
+  const baseDir = env.CLAUDE_PROJECT_DIR && env.CLAUDE_PROJECT_DIR !== ''
+    ? env.CLAUDE_PROJECT_DIR
+    : process.cwd();
+  const harnessJoin = (...p: string[]) => path.resolve(baseDir, HARNESS_DIR, ...p);
   const parsedMaxRules = Number(env.SSH_HARNESS_MAX_RULES ?? 40);
   const envOverride = env.SSH_HARNESS_CONFIG;
   return {
-    allowlistPath: env.SSH_HARNESS_ALLOWLIST ?? cwdJoin('allowlist.yaml'),
-    auditPath:     env.SSH_HARNESS_AUDIT     ?? cwdJoin('audit.log'),
+    allowlistPath: env.SSH_HARNESS_ALLOWLIST ?? harnessJoin('allowlist.yaml'),
+    auditPath:     env.SSH_HARNESS_AUDIT     ?? harnessJoin('audit.log'),
     // Seed with env override if present, else the global default. createServer
     // can overwrite this with the allowlist's hosts.sshConfigRoot when applicable.
     sshConfigPath: envOverride !== undefined && envOverride !== '' ? envOverride : DEFAULT_SSH_CONFIG,

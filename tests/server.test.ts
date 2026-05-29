@@ -44,4 +44,18 @@ rules:
     expect(tools.length).toBe(registry.count() + 1);
     expect(tools.map((t) => t.name)).toContain('ssh_harness_get_allow_host_lists');
   });
+
+  // Regression: a missing allowlist must NOT exit the process before the MCP
+  // transport connects (that surfaces to the client as an opaque -32000).
+  // The server degrades to zero rule tools but keeps the read-only builtin.
+  it('degrades to builtin-only (no exit) when the allowlist is missing', () => {
+    const env = { ...process.env,
+      SSH_HARNESS_ALLOWLIST: path.join(tmp, 'does-not-exist', 'allowlist.yaml'),
+      SSH_HARNESS_AUDIT: path.join(tmp, 'audit.log'),
+    };
+
+    const { registry, tools } = createServer(env);
+    expect(registry.count()).toBe(0);
+    expect(tools.map((t) => t.name)).toEqual(['ssh_harness_get_allow_host_lists']);
+  });
 });

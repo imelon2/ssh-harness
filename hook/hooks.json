@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/hook/init-ssh-harness.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hook/init-ssh-harness.sh\""
           }
         ]
       }
